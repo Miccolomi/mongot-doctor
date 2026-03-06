@@ -90,7 +90,3 @@ The **Compliance & Best Practices** panel automatically calculates the following
 * **Index Consolidation**: Alerts you if multiple fragmented indexes are defined on the same collection (an anti-pattern).
 * **I/O Bottleneck**: Correlates *Disk Queue Length* with *Oplog Lag* to determine if your K8s storage volumes (PVCs) are bottlenecking the indexing process.
 * **CPU/QPS Ratio**: Checks that at least 1 Core is allocated for every 10 Queries Per Second, based on traffic detected by the MongoDB profiler.
-
-## 📜 License
-
-This project is licensed under the MIT License.
