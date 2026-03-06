@@ -9,7 +9,7 @@ import argparse
 import logging
 import time
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 try:
     from bson import Binary, ObjectId, Timestamp
 except ImportError:
@@ -57,7 +57,10 @@ k8s_v1: k8s_client.CoreV1Api = None
 k8s_custom: k8s_client.CustomObjectsApi = None
 k8s_apps: k8s_client.AppsV1Api = None
 TARGET_NAMESPACE = None
-MONGOT_PROMETHEUS_PORT = 9946
+
+# Cache metrics to prevent overloading K8s and MongoDB APIs
+metrics_cache = {"data": None, "timestamp": 0}
+CACHE_TTL_SEC = 10
 
 
 # ── Kubernetes Discovery & Events ───────────────────────
@@ -107,7 +110,7 @@ def get_pod_warnings(namespace: str, pod_name: str) -> list:
     try:
         fs = f"involvedObject.name={pod_name},type=Warning"
         events = k8s_v1.list_namespaced_event(namespace, field_selector=fs).items
-        events.sort(key=lambda x: x.last_timestamp or x.event_time or datetime.min, reverse=True)
+        events.sort(key=lambda x: x.last_timestamp or x.event_time or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         for e in events[:5]:
             warnings.append({"reason": e.reason, "message": e.message, "count": e.count, "time": e.last_timestamp.isoformat() if e.last_timestamp else None})
     except Exception: pass
@@ -227,6 +230,7 @@ def get_oplog_info() -> dict:
     except Exception: pass
     return info
 
+
 def get_search_indexes() -> list:
     indexes = []
     if not mongo_client: return indexes
@@ -237,225 +241,20 @@ def get_search_indexes() -> list:
             for coll_name in db.list_collection_names():
                 try:
                     for idx in db[coll_name].list_search_indexes():
-                        idx_type = idx.get("type", "search")
-                        idx_info = {
-                            "name": idx.get("name", "unknown"),
-                            "type": "vectorSearch" if idx_type == "vectorSearch" else "fullText",
-                            "status": idx.get("status", "UNKNOWN"), 
-                            "ns": f"{db_name}.{coll_name}",
-                            "queryable": idx.get("queryable", False), 
-                            "num_docs": None
-                        }
-                        
-                        if idx_info["type"] == "fullText":
-                            # Conteggio Ufficiale per Full-Text
-                            try:
-                                stats = db.command({
-                                    "aggregate": coll_name,
-                                    "pipeline": [{
-                                        "$searchMeta": {
-                                            "index": idx["name"],
-                                            "exists": { "path": "_id" },
-                                            "count": { "type": "total" }
-                                        }
-                                    }],
-                                    "cursor": {}
-                                })
-                                first = (stats.get("cursor", {}).get("firstBatch") or [None])[0]
-                                if first and "count" in first: 
-                                    idx_info["num_docs"] = first["count"].get("total", 0)
-                            except Exception: pass
-                        else:
-                            # HACK ENTERPRISE per Vector Search
-                            try:
-                                # 1. Peschiamo la definizione dell'indice
-                                definition = idx.get("latestDefinition", idx.get("definition", {}))
-                                fields = definition.get("fields", [])
-                                vector_field = None
-                                
-                                # 2. Troviamo il nome esatto del campo vettoriale
-                                for f in fields:
-                                    if f.get("type") == "vector":
-                                        vector_field = f.get("path")
-                                        break
-                                
-                                # 3. Contiamo i documenti che hanno quel campo
-                                if vector_field:
-                                    idx_info["num_docs"] = db[coll_name].count_documents({vector_field: {"$exists": True}})
-                                else:
-                                    # Fallback finale: stimiamo i documenti totali della collection
-                                    idx_info["num_docs"] = db[coll_name].estimated_document_count()
-                            except Exception: pass
-
-                        # --- AUTO-CORREZIONE DELLO STATO FANTASMA ---
-                        # Se abbiamo trovato dei documenti, l'indice è matematicamente pronto
-                        if idx_info["num_docs"] is not None and isinstance(idx_info["num_docs"], int) and idx_info["num_docs"] >= 0:
-                            if not idx_info["status"] or idx_info["status"] == "UNKNOWN":
-                                idx_info["status"] = "READY (Auto)"
-                            idx_info["queryable"] = True
-                            
-                        indexes.append(idx_info)
-                except Exception: pass
-    except Exception: pass
-    return indexes
-    indexes = []
-    if not mongo_client: return indexes
-    try:
-        db_names = [d for d in mongo_client.list_database_names() if d not in ("admin", "local", "config")]
-        for db_name in db_names:
-            db = mongo_client[db_name]
-            for coll_name in db.list_collection_names():
-                try:
-                    for idx in db[coll_name].list_search_indexes():
-                        idx_type = idx.get("type", "search")
-                        idx_info = {
-                            "name": idx.get("name", "unknown"),
-                            "type": "vectorSearch" if idx_type == "vectorSearch" else "fullText",
-                            "status": idx.get("status", "UNKNOWN"), "ns": f"{db_name}.{coll_name}",
-                            "queryable": idx.get("queryable", False), "num_docs": None
-                        }
-                        
-                        if idx_info["type"] == "fullText":
-                            # Conteggio Ufficiale per Full-Text
-                            try:
-                                stats = db.command({
-                                    "aggregate": coll_name,
-                                    "pipeline": [{
-                                        "$searchMeta": {
-                                            "index": idx["name"],
-                                            "exists": { "path": "_id" },
-                                            "count": { "type": "total" }
-                                        }
-                                    }],
-                                    "cursor": {}
-                                })
-                                first = (stats.get("cursor", {}).get("firstBatch") or [None])[0]
-                                if first and "count" in first: 
-                                    idx_info["num_docs"] = first["count"].get("total", 0)
-                            except Exception: pass
-                        else:
-                            # HACK ENTERPRISE per Vector Search
-                            try:
-                                # 1. Peschiamo la definizione dell'indice
-                                definition = idx.get("latestDefinition", idx.get("definition", {}))
-                                fields = definition.get("fields", [])
-                                vector_field = None
-                                
-                                # 2. Troviamo il nome esatto del campo vettoriale
-                                for f in fields:
-                                    if f.get("type") == "vector":
-                                        vector_field = f.get("path")
-                                        break
-                                
-                                # 3. Contiamo i documenti che hanno quel campo
-                                if vector_field:
-                                    idx_info["num_docs"] = db[coll_name].count_documents({vector_field: {"$exists": True}})
-                                else:
-                                    # Fallback finale: stimiamo i documenti totali della collection
-                                    idx_info["num_docs"] = db[coll_name].estimated_document_count()
-                            except Exception: pass
-                            
-                        indexes.append(idx_info)
-                except Exception: pass
-    except Exception: pass
-    return indexes
-    indexes = []
-    if not mongo_client: return indexes
-    try:
-        db_names = [d for d in mongo_client.list_database_names() if d not in ("admin", "local", "config")]
-        for db_name in db_names:
-            db = mongo_client[db_name]
-            for coll_name in db.list_collection_names():
-                try:
-                    for idx in db[coll_name].list_search_indexes():
                         idx_info = {
                             "name": idx.get("name", "unknown"),
                             "type": "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText",
-                            "status": idx.get("status", "UNKNOWN"), "ns": f"{db_name}.{coll_name}",
-                            "queryable": idx.get("queryable", False), "num_docs": None
-                        }
-                        
-                        # --- QUERY $searchMeta DEFINITIVA ---
-                        try:
-                            stats = db.command({
-                                "aggregate": coll_name,
-                                "pipeline": [{
-                                    "$searchMeta": {
-                                        "index": idx["name"],
-                                        "exists": { "path": "_id" },
-                                        "count": { "type": "total" }
-                                    }
-                                }],
-                                "cursor": {}
-                            })
-                            first = (stats.get("cursor", {}).get("firstBatch") or [None])[0]
-                            if first and "count" in first: 
-                                idx_info["num_docs"] = first["count"].get("total", 0)
-                        except Exception: 
-                            pass # Ignoriamo silenziosamente se l'indice non è ancora pronto
-                            
-                        indexes.append(idx_info)
-                except Exception: pass
-    except Exception: pass
-    return indexes
-    indexes = []
-    if not mongo_client: return indexes
-    try:
-        db_names = [d for d in mongo_client.list_database_names() if d not in ("admin", "local", "config")]
-        for db_name in db_names:
-            db = mongo_client[db_name]
-            for coll_name in db.list_collection_names():
-                try:
-                    for idx in db[coll_name].list_search_indexes():
-                        idx_info = {
-                            "name": idx.get("name", "unknown"),
-                            "type": "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText",
-                            "status": idx.get("status", "UNKNOWN"), "ns": f"{db_name}.{coll_name}",
-                            "queryable": idx.get("queryable", False), "num_docs": None
-                        }
-                        
-                        # --- ECCO LA QUERY CORRETTA ---
-                        try:
-                            stats = db.command({
-                                "aggregate": coll_name,
-                                "pipeline": [{
-                                    "$searchMeta": {
-                                        "index": idx["name"],
-                                        "count": {"type": "total"}
-                                    }
-                                }],
-                                "cursor": {}
-                            })
-                            first = (stats.get("cursor", {}).get("firstBatch") or [None])[0]
-                            if first and "count" in first: 
-                                idx_info["num_docs"] = first["count"].get("total", 0)
-                        except Exception as e: 
-                            pass # Se l'indice è davvero rotto, ignoriamo
-                            
-                        indexes.append(idx_info)
-                except Exception: pass
-    except Exception: pass
-    return indexes
-    indexes = []
-    if not mongo_client: return indexes
-    try:
-        db_names = [d for d in mongo_client.list_database_names() if d not in ("admin", "local", "config")]
-        for db_name in db_names:
-            db = mongo_client[db_name]
-            for coll_name in db.list_collection_names():
-                try:
-                    for idx in db[coll_name].list_search_indexes():
-                        idx_info = {
-                            "name": idx.get("name", "unknown"),
-                            "type": "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText",
-                            "status": idx.get("status", "UNKNOWN"), "ns": f"{db_name}.{coll_name}",
-                            "queryable": idx.get("queryable", False), "num_docs": None
+                            "status": idx.get("status", "READY"), "ns": f"{db_name}.{coll_name}",
+                            "queryable": idx.get("queryable", True), "num_docs": None
                         }
                         try:
                             stats = db.command({"aggregate": coll_name, "pipeline": [{"$searchMeta": {"index": idx["name"], "exists": {"path": {"wildcard": "*"}}}}]})
                             first = (stats.get("cursor", {}).get("firstBatch") or [None])[0]
                             if first and "count" in first: idx_info["num_docs"] = first["count"].get("lowerBound", 0)
-                        except Exception: pass
+                        except Exception: 
+                            try:
+                                idx_info["num_docs"] = db[coll_name].estimated_document_count()
+                            except: pass
                         indexes.append(idx_info)
                 except Exception: pass
     except Exception: pass
@@ -502,15 +301,8 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
                 text = k8s_v1.connect_get_namespaced_pod_proxy_with_path(
                     name=f"{pod_name}:{port}", namespace=namespace, path="metrics"
                 )
-            except Exception:
-                # 3. Fallback Exec 
-                try:
-                    text = stream(k8s_v1.connect_get_namespaced_pod_exec,
-                                  pod_name, namespace,
-                                  command=["wget", "-qO-", f"http://localhost:{port}/metrics"],
-                                  stderr=False, stdin=False, stdout=True, tty=False)
-                except Exception as e:
-                    log.debug(f"Scrape fallito per {pod_name}: {e}")
+            except Exception as e:
+                log.debug(f"Scrape fallito via proxy per {pod_name}: {e}")
 
     if not text: return result
 
@@ -594,6 +386,12 @@ def pod_logs(namespace, pod_name):
 
 @app.route("/metrics")
 def metrics():
+    global metrics_cache
+    now = time.time()
+    
+    if metrics_cache["data"] and (now - metrics_cache["timestamp"]) < CACHE_TTL_SEC:
+        return jsonify(metrics_cache["data"])
+
     t0 = time.time()
     res = {
         "operator": discover_operator_info(),
@@ -607,17 +405,33 @@ def metrics():
         "search_perf": get_search_perf_from_profiler(),
         "mongo_connected": mongo_client is not None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "_collect_ms": 0
+        "_collect_ms": 0,
+        "_cached": False
     }
-    prom_port = 9946
-    for c in res["mongodbsearch_crds"]:
-        if c.get("prometheus_enabled"): prom_port = c.get("prometheus_port", 9946)
     
+    # Map cluster name to its prometheus port based on CRDs
+    prom_ports = {}
+    for c in res["mongodbsearch_crds"]:
+        if c.get("prometheus_enabled"):
+            cluster_name = c["name"]
+            # Typically pods are named like <cluster_name>-<node_id>
+            prom_ports[cluster_name] = c.get("prometheus_port", 9946)
+            
     prom_metrics = {}
     for p in res["mongot_pods"]:
-        prom_metrics[p["name"]] = scrape_mongot_prometheus(p["name"], p["namespace"], p.get("pod_ip","127.0.0.1"), prom_port)
+        # Find the correct port for this pod based on its cluster name
+        pod_port = 9946
+        for cluster_name, port in prom_ports.items():
+            if cluster_name in p["name"]:
+                pod_port = port
+                break
+                
+        prom_metrics[p["name"]] = scrape_mongot_prometheus(p["name"], p["namespace"], p.get("pod_ip","127.0.0.1"), pod_port)
+    
     res["mongot_prometheus"] = prom_metrics
     res["_collect_ms"] = round((time.time() - t0) * 1000, 1)
+    
+    metrics_cache = {"data": res, "timestamp": now}
     return jsonify(res)
 
 @app.route("/")
@@ -816,6 +630,39 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
         qpsStatus.val = `Allocati ${totalCores} Core per ${qps} QPS totali. Rapporto entro le linee guida.`;
     }
 
+    // 5. Rischio OOMKilled (Memoria MMap vs Heap)
+    let oomStatus = { state: 'PASSED', text: '', val: '' };
+    let hasOomKilled = false;
+    pods.forEach(p => {
+        if(p.containers.some(c => c.last_reason === 'OOMKilled')) hasOomKilled = true;
+        const prom = promAll[p.name];
+        if(!prom) return;
+        const jvm = prom.categories.jvm;
+        const sysMem = prom.categories.memory;
+        if(jvm && sysMem && sysMem.phys_total_bytes > 0 && jvm.heap_max_bytes > 0) {
+            const heapRatio = jvm.heap_max_bytes / sysMem.phys_total_bytes;
+            if(heapRatio > 0.6) {
+                oomStatus.state = 'WARNING';
+                oomStatus.val = `Pod ${p.name}: Max Heap K8s è impostato al ${(heapRatio*100).toFixed(0)}% del limit RAM totale. Lucene richiede molta RAM (Mmap) per i file off-heap. È consigliato limitare l'Heap al 50% o meno.`;
+            }
+        }
+    });
+    if(hasOomKilled) {
+        oomStatus.state = 'CRITICAL';
+        oomStatus.val = `Rilevati eventi OOMKilled! Aumentare le resource requests/limits nel CRD MCK e ridurre il maxCapacityMB di mongot.`;
+    } else if(oomStatus.state === 'PASSED') {
+        oomStatus.val = `Nessun evento OOMKilled rilevato. Limiti heap entro parametri sicuri per allocare RAM ai file di Sistema (Mmap).`;
+    }
+    
+    // 6. Stato CRD Operator
+    let crdStatus = { state: 'PASSED', text: '', val: 'I CRD gestiti dall\'Operator K8s sono in stato corretto (Running).' };
+    d.mongodbsearch_crds.forEach(c => {
+        if(c.phase !== 'Running') {
+            crdStatus.state = 'CRITICAL';
+            crdStatus.val = `CRD ${c.name} in namespace ${c.namespace} è in stato: ${c.phase}! Il reconciliation dell'Operator MCK è fallito. Controllare i log dell'operator.`;
+        }
+    });
+
     // Builder riga HTML
     const stCls = { 'PASSED': 'st-pass', 'WARNING': 'st-warn', 'CRITICAL': 'st-crit' };
     const stIco = { 'PASSED': '🟢 PASSED', 'WARNING': '🟡 WARNING', 'CRITICAL': '🔴 CRIT' };
@@ -838,10 +685,22 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
             <div class="adv-doc">📖 Doc: "If disk I/O queue length is high and replication lag is growing, you need to scale up your hardware."</div>
           </div>`;
 
-    h += `<div class="adv-card" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
+    h += `<div class="adv-card">
+            <div class="adv-title"><span>Stato CRD MongoDB Search</span><span class="${stCls[crdStatus.state]}">${stIco[crdStatus.state]}</span></div>
+            <div class="adv-val"><b>Rilevato:</b> ${crdStatus.val}</div>
+            <div class="adv-doc">📖 Doc: "A ReconcileFailed state indicates the Kubernetes Operator cannot apply the desired spec (network issue, resource quota)."</div>
+          </div>`;
+
+    h += `<div class="adv-card">
             <div class="adv-title"><span>Rapporto CPU / QPS</span><span class="${stCls[qpsStatus.state]}">${stIco[qpsStatus.state]}</span></div>
             <div class="adv-val"><b>Rilevato:</b> ${qpsStatus.val}</div>
             <div class="adv-doc">📖 Doc: "A general starting point is 1 CPU core for every 10 QPS."</div>
+          </div>`;
+
+    h += `<div class="adv-card" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
+            <div class="adv-title"><span>Rischio OOMKilled & MMap</span><span class="${stCls[oomStatus.state]}">${stIco[oomStatus.state]}</span></div>
+            <div class="adv-val"><b>Rilevato:</b> ${oomStatus.val}</div>
+            <div class="adv-doc">📖 Doc: "mongot utilizes memory-mapped files. The container memory limit MUST be substantially higher than the internal maxCapacityMB heap."</div>
           </div>`;
 
     h += `</div>`;
@@ -1018,7 +877,22 @@ function render(d) {
 }
 
 let iv; function setR(){if(iv)clearInterval(iv);iv=setInterval(fetchM,+$('rr').value*1000)}
-async function fetchM(){try{const r=await fetch('/metrics');$('err').style.display='none';render(await r.json())}catch(e){$('err').style.display='block';$('err').textContent='\u26A0 '+e.message}}
+async function fetchM(){
+    try{
+        const r=await fetch('/metrics');
+        const d=await r.json();
+        if(d.error) {
+            $('err').style.display='block';
+            $('err').innerHTML='<b>\u26A0 Errore Backend:</b> ' + d.error;
+            return;
+        }
+        $('err').style.display='none';
+        render(d);
+    }catch(e){
+        $('err').style.display='block';
+        $('err').innerHTML='<b>\u26A0 Rete / Connessione fallita:</b> Impossibile contattare il server Python ('+e.message+')';
+    }
+}
 fetchM();setR();
 </script></body></html>"""
     return Response(HTML, mimetype="text/html")
