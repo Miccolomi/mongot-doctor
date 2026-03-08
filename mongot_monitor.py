@@ -64,10 +64,15 @@ CACHE_TTL_SEC = 10
 
 
 # ── Kubernetes Discovery & Events ───────────────────────
-def discover_mongodbsearch_crds() -> list:
+def discover_mongodbsearch_crds(errors: list = None) -> list:
     if not k8s_custom: return []
     crds = []
-    namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else [ns.metadata.name for ns in k8s_v1.list_namespace().items]
+    try:
+        namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else [ns.metadata.name for ns in k8s_v1.list_namespace().items]
+    except Exception as e:
+        if errors is not None: errors.append(f"K8s API Error (Lettura namespaces per CRDs): {str(e)}")
+        namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else ["mongodb", "default"]
+        
     for ns in namespaces:
         try:
             res = k8s_custom.list_namespaced_custom_object("mongodb.com", "v1", ns, "mongodbsearch")
@@ -81,10 +86,11 @@ def discover_mongodbsearch_crds() -> list:
                     "phase": status.get("phase", "Unknown"),
                     "log_level": spec.get("logLevel", "INFO")
                 })
-        except Exception: pass
+        except Exception as e: 
+            if errors is not None: errors.append(f"K8s API Error (MongoDBSearch CRD nel ns '{ns}'): {str(e)}")
     return crds
 
-def discover_operator_info() -> dict:
+def discover_operator_info(errors: list = None) -> dict:
     if not k8s_apps: return {}
     try:
         namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else ["mongodb", "default", "mongo"]
@@ -105,15 +111,18 @@ def discover_operator_info() -> dict:
                                     if p.metadata.name.startswith(dname):
                                         pod_name = p.metadata.name
                                         break
-                            except: pass
+                            except Exception as e: 
+                                if errors is not None: errors.append(f"K8s API Error (Pod list per Operator nel ns '{ns}'): {str(e)}")
 
                         return {
                             "name": dep.metadata.name, "namespace": ns, "pod_name": pod_name,
                             "image": containers[0].image if containers else "?",
                             "replicas": dep.status.ready_replicas or 0, "desired": dep.spec.replicas or 1
                         }
-            except Exception: pass
-    except Exception: pass
+            except Exception as e: 
+                if errors is not None: errors.append(f"K8s API Error (Deployment list per Operator nel ns '{ns}'): {str(e)}")
+    except Exception as e: 
+        if errors is not None: errors.append(f"K8s API Error (Operator Discovery): {str(e)}")
     return {}
 
 def get_pod_warnings(namespace: str, pod_name: str) -> list:
@@ -128,7 +137,7 @@ def get_pod_warnings(namespace: str, pod_name: str) -> list:
     except Exception: pass
     return warnings
 
-def discover_mongot_pods() -> list:
+def discover_mongot_pods(errors: list = None) -> list:
     if not k8s_v1: return []
     pods = []
     found_pods = set()
@@ -180,10 +189,12 @@ def discover_mongot_pods() -> list:
                 "cpu_limit_cores": cpu_limit_cores,
                 "warnings": get_pod_warnings(pod.metadata.namespace, pod.metadata.name)
             })
-    except Exception as e: log.error(f"Errore discovery pod K8s: {e}")
+    except Exception as e:
+        log.error(f"Errore discovery pod K8s: {e}")
+        if errors is not None: errors.append(f"K8s API Error (Pod Discovery): {str(e)}")
     return pods
 
-def get_mongot_pvcs() -> list:
+def get_mongot_pvcs(errors: list = None) -> list:
     pvcs = []
     if not k8s_v1: return pvcs
     try:
@@ -196,10 +207,11 @@ def get_mongot_pvcs() -> list:
                     "capacity": pvc.status.capacity.get("storage", "?") if pvc.status.capacity else "?",
                     "storage_class": pvc.spec.storage_class_name
                 })
-    except Exception: pass
+    except Exception as e: 
+        if errors is not None: errors.append(f"K8s API Error (Discovery PVCs '{TARGET_NAMESPACE or 'all'}'): {str(e)}")
     return pvcs
 
-def get_mongot_services() -> list:
+def get_mongot_services(errors: list = None) -> list:
     services = []
     if not k8s_v1: return services
     try:
@@ -209,7 +221,8 @@ def get_mongot_services() -> list:
             if "search" in sname or "mongot" in sname:
                 ports = [{"port": p.port, "target": p.target_port, "protocol": p.protocol} for p in (svc.spec.ports or [])]
                 services.append({"name": svc.metadata.name, "namespace": svc.metadata.namespace, "type": svc.spec.type, "ports": ports})
-    except Exception: pass
+    except Exception as e: 
+        if errors is not None: errors.append(f"K8s API Error (Discovery Services '{TARGET_NAMESPACE or 'all'}'): {str(e)}")
     return services
 
 def get_pod_metrics() -> dict:
@@ -231,7 +244,7 @@ def get_pod_metrics() -> dict:
 
 
 # ── MongoDB & Prometheus ────────────────────────────────
-def get_mongo_vitals() -> dict:
+def get_mongo_vitals(errors: list = None) -> dict:
     vitals = {"connections_active": 0, "connections_available": 0, "active_writers": 0, "ops_insert": 0, "ops_update": 0, "ops_delete": 0}
     if not mongo_client: return vitals
     try:
@@ -243,10 +256,11 @@ def get_mongo_vitals() -> dict:
         vitals["ops_insert"] = opc.get("insert", 0)
         vitals["ops_update"] = opc.get("update", 0)
         vitals["ops_delete"] = opc.get("delete", 0)
-    except Exception: pass
+    except Exception as e: 
+        if errors is not None: errors.append(f"MongoDB Error (Lettura serverStatus): {str(e)}")
     return vitals
 
-def get_oplog_info() -> dict:
+def get_oplog_info(errors: list = None) -> dict:
     info = {"head_time": None, "tail_time": None, "window_hours": 0, "head_timestamp": 0}
     if not mongo_client: return info
     try:
@@ -273,11 +287,13 @@ def get_oplog_info() -> dict:
             diff_sec = head_doc["ts"].time - tail_doc["ts"].time
             info["window_hours"] = round(diff_sec / 3600, 2)
             
-    except Exception as e: log.error(f"Errore Oplog: {e}")
+    except Exception as e:
+        log.error(f"Errore Oplog: {e}")
+        if errors is not None: errors.append(f"MongoDB Error (Lettura Oplog per lag): {str(e)}")
     return info
 
 
-def get_search_indexes() -> list:
+def get_search_indexes(errors: list = None) -> list:
     indexes = []
     if not mongo_client: return indexes
     try:
@@ -302,11 +318,13 @@ def get_search_indexes() -> list:
                                 idx_info["num_docs"] = db[coll_name].estimated_document_count()
                             except: pass
                         indexes.append(idx_info)
-                except Exception: pass
-    except Exception: pass
+                except Exception as e:
+                    if errors is not None: errors.append(f"MongoDB Error (List search indexes in {db_name}.{coll_name}): {str(e)}")
+    except Exception as e:
+        if errors is not None: errors.append(f"MongoDB Error (Lettura database/collections): {str(e)}")
     return indexes
 
-def get_search_perf_from_profiler() -> dict:
+def get_search_perf_from_profiler(errors: list = None) -> dict:
     """Estrae i QPS per l'Advisor."""
     perf = {"queries_per_sec": 0, "total_queries_5m": 0}
     if not mongo_client: return perf
@@ -318,39 +336,46 @@ def get_search_perf_from_profiler() -> dict:
             db = mongo_client[db_name]
             try:
                 query = {
-                    "ts": {"$gte": datetime.utcfromtimestamp(time.time() - window_sec)},
+                    "ts": {"$gte": datetime.now(timezone.utc) - timedelta(seconds=window_sec)},
                     "$or": [{"command.pipeline": {"$elemMatch": {"$search": {"$exists": True}}}},
                             {"command.pipeline": {"$elemMatch": {"$vectorSearch": {"$exists": True}}}}]
                 }
                 for doc in db["system.profile"].find(query).sort("ts", -1).limit(500):
                     all_durations.append(doc.get("millis", 0))
-            except Exception: pass
+            except Exception as e:
+                pass # Profiling setup may be disabled, ignore silently for db scope
         if all_durations:
             perf["total_queries_5m"] = len(all_durations)
             perf["queries_per_sec"] = round(len(all_durations) / window_sec, 2)
-    except Exception: pass
+    except Exception as e: 
+        if errors is not None: errors.append(f"MongoDB Error (Lettura system.profile per profiler): {str(e)}")
     return perf
 
-def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: int) -> dict:
+def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: int, errors: list = None) -> dict:
     result = {"available": False, "raw_count": 0, "categories": {}}
     text = ""
+    scrape_errs = []
     
     # 1. Fallback Rete Diretta
     try:
         resp = requests.get(f"http://{pod_ip}:{port}/metrics", timeout=2)
         if resp.status_code == 200: text = resp.text
-        else: raise Exception("HTTP Failed")
-    except Exception:
+        else: raise Exception(f"HTTP {resp.status_code}")
+    except Exception as e:
+        scrape_errs.append(f"Direct Net: {str(e)}")
         if k8s_v1:
             # 2. Fallback API Proxy
             try:
                 text = k8s_v1.connect_get_namespaced_pod_proxy_with_path(
                     name=f"{pod_name}:{port}", namespace=namespace, path="metrics"
                 )
-            except Exception as e:
-                log.debug(f"Scrape fallito via proxy per {pod_name}: {e}")
+            except Exception as e2:
+                scrape_errs.append(f"API Proxy: {str(e2)}")
+                log.debug(f"Scrape fallito via proxy per {pod_name}: {e2}")
 
-    if not text: return result
+    if not text: 
+        if errors is not None: errors.append(f"Network Error (Prometheus scrape fallito per {pod_name}:{port}) -> " + " | ".join(scrape_errs))
+        return result
 
     if hasattr(text, "data"): text = text.data
     if isinstance(text, bytes): text = text.decode('utf-8', errors='ignore')
@@ -424,6 +449,8 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
 
 
 
+from flask import jsonify, render_template_string, request, Response
+
 # ── API & HTML ──────────────────────────────────────────
 @app.route("/api/logs/<namespace>/<pod_name>")
 def pod_logs(namespace, pod_name):
@@ -432,10 +459,89 @@ def pod_logs(namespace, pod_name):
         return jsonify({"logs": k8s_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=50)})
     except Exception as e: return jsonify({"error": str(e)}), 500
 
+@app.route("/api/download_logs/<namespace>/<pod_name>")
+def download_logs(namespace, pod_name):
+    if not k8s_v1: return "K8s API non disponibile", 500
+    try:
+        t_param = request.args.get('time', 'all')
+        lvl_param = request.args.get('level', 'all').lower()
+        
+        since_sec = None
+        if t_param == '10m': since_sec = 600
+        elif t_param == '1h': since_sec = 3600
+        elif t_param == '24h': since_sec = 86400
+        
+        # Call K8s API with or without time bounds
+        if since_sec:
+            raw_logs = k8s_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, since_seconds=since_sec)
+        else:
+            raw_logs = k8s_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace)
+            
+        # Apply Level Filtering (Text-based searching for error keywords)
+        if lvl_param == 'error':
+            filtered_lines = []
+            for line in raw_logs.splitlines():
+                l_lower = line.lower()
+                if "error" in l_lower or "fatal" in l_lower or "exception" in l_lower or "warning" in l_lower:
+                    filtered_lines.append(line)
+            final_log_data = "\n".join(filtered_lines)
+            if not final_log_data: final_log_data = "Nessun errore rilevato in questo arco temporale."
+        else:
+            final_log_data = raw_logs
+            
+        return Response(
+            final_log_data,
+            mimetype="text/plain",
+            headers={"Content-disposition": f"attachment; filename={pod_name}_logs_{t_param}_{lvl_param}.txt"}
+        )
+    except Exception as e:
+        return f"Errore: {str(e)}", 500
+
 def get_k8s_version() -> str:
     if not K8S_AVAILABLE or not k8s_client: return "N/A"
     try: return k8s_client.VersionApi().get_code().git_version
     except Exception: return "N/A"
+
+def get_helm_releases(errors: list = None) -> list:
+    releases = []
+    if not k8s_v1: return releases
+    try:
+        res = k8s_v1.list_namespaced_secret(TARGET_NAMESPACE, label_selector="owner=helm") if TARGET_NAMESPACE else k8s_v1.list_secret_for_all_namespaces(label_selector="owner=helm")
+        
+        latest_rels = {}
+        for s in res.items:
+            labels = s.metadata.labels or {}
+            name = labels.get("name", "unknown")
+            status = labels.get("status", "unknown")
+            # Only track MongoDB related charts to avoid clutter
+            if "mongo" not in name.lower(): continue
+            
+            try: version = int(labels.get("version", 0))
+            except: version = 0
+            
+            if name not in latest_rels or latest_rels[name]["revision"] < version:
+                latest_rels[name] = {
+                    "name": name,
+                    "namespace": s.metadata.namespace,
+                    "revision": version,
+                    "status": status,
+                    "modifiedAt": labels.get("modifiedAt", "unknown")
+                }
+        
+        for k, v in latest_rels.items():
+            try:
+                if str(v["modifiedAt"]).isdigit():
+                    v["modifiedAt_str"] = datetime.utcfromtimestamp(int(v["modifiedAt"])).strftime("%Y-%m-%d %H:%M:%S")
+                else: 
+                    v["modifiedAt_str"] = str(v["modifiedAt"])
+            except:
+                v["modifiedAt_str"] = "N/A"
+            releases.append(v)
+            
+    except Exception as e:
+        if errors is not None: errors.append(f"K8s API Error (Helm Release Discovery): {str(e)}")
+        
+    return sorted(releases, key=lambda x: x["name"])
 
 # Cache globale per la dashboard
 metrics_cache = {
@@ -455,8 +561,11 @@ def metrics():
 
     t0 = time.time()
     
+    # ── Global Error Collector ──
+    global_errors = []
+    
     # Mongo Vitals Logic & Rate calculation
-    vitals = get_mongo_vitals()
+    vitals = get_mongo_vitals(global_errors)
     last_m = metrics_cache["last_mongo"]
     if "time" in last_m:
         dt = now - last_m["time"]
@@ -474,16 +583,18 @@ def metrics():
     
     res = {
         "k8s_version": get_k8s_version(),
-        "operator": discover_operator_info(),
-        "mongodbsearch_crds": discover_mongodbsearch_crds(),
-        "mongot_pods": discover_mongot_pods(),
-        "mongot_pvcs": get_mongot_pvcs(),
-        "mongot_services": get_mongot_services(),
+        "operator": discover_operator_info(global_errors),
+        "mongodbsearch_crds": discover_mongodbsearch_crds(global_errors),
+        "mongot_pods": discover_mongot_pods(global_errors),
+        "mongot_pvcs": get_mongot_pvcs(global_errors),
+        "mongot_services": get_mongot_services(global_errors),
         "pod_metrics": get_pod_metrics(),
-        "oplog_info": get_oplog_info(),
+        "oplog_info": get_oplog_info(global_errors),
         "mongo_vitals": vitals,
-        "search_indexes": get_search_indexes(),
-        "search_perf": get_search_perf_from_profiler(),
+        "search_indexes": get_search_indexes(global_errors),
+        "search_perf": get_search_perf_from_profiler(global_errors),
+        "helm_releases": get_helm_releases(global_errors),
+        "global_errors": global_errors, # Raccoglie tutti gli errori di questo ciclo
         "mongo_connected": mongo_client is not None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "_collect_ms": 0,
@@ -507,7 +618,7 @@ def metrics():
                 pod_port = port
                 break
                 
-        metrics = scrape_mongot_prometheus(p["name"], p["namespace"], p.get("pod_ip","127.0.0.1"), pod_port)
+        metrics = scrape_mongot_prometheus(p["name"], p["namespace"], p.get("pod_ip","127.0.0.1"), pod_port, global_errors)
         
         # Calcolo Rateo / Secondo per le metriche cumulative
         pod_key = p["name"]
@@ -549,7 +660,8 @@ h1{font-family:'Space Grotesk',sans-serif;font-size:18px;color:#e8ecf4;letter-sp
 .hdr-l{display:flex;align-items:center;gap:12px}
 .logo{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#7c4dff,#00b0ff);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff}
 .hdr-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-select{padding:5px 8px;font-size:10px;border-radius:6px;border:1px solid #1e2740;background:#0d1117;color:#6b7394;font-family:'JetBrains Mono',monospace}
+select{padding:6px 12px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid #00e67644;background:#00e67618;color:#00e676;cursor:pointer;font-family:'JetBrains Mono',monospace;outline:none;transition:0.2s}
+select:hover{border-color:#00e676;background:#00e67633}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media(max-width:1200px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.grid{grid-template-columns:1fr}}
@@ -912,6 +1024,29 @@ function render(d) {
 
   let h='';
 
+  // 0. GLOBAL DIAGNOSTIC ERRORS
+  if (d.global_errors && d.global_errors.length > 0) {
+      h += `<div class="c s4" style="background:#ff174411; border:1px solid #ff174466; border-left:4px solid #ff1744;">
+              <div class="c-h" style="border-bottom:none; margin-bottom:8px;"><span>🚨</span><span class="c-t" style="color:#ff6b6b;font-weight:700">DIAGNOSTIC & CONNECTION ERRORS</span></div>
+              <div style="font-size:11px; color:#c9d1e0; margin-bottom:10px; padding:0 12px;">Il backend Python ha rilevato dei fallimenti di rete o di permessi. Alcune rotte o metriche potrebbero mancare:</div>
+              <ul style="margin:0; padding:0 12px 12px 30px; font-size:11px; color:#ffb4b4; line-height:1.6; font-family:monospace;">`;
+      d.global_errors.forEach(err => {
+          h += `<li>${err}</li>`;
+      });
+      h += `  </ul>
+            </div>`;
+  } else {
+      h += `<div class="c s4" style="background:#00e67611; border:1px solid #00e67644; border-left:4px solid #00e676; padding:12px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:16px;">✅</span>
+                  <div>
+                      <div style="color:#00e676; font-weight:700; font-size:12px; margin-bottom:2px; text-transform:uppercase; letter-spacing:1px;">Nessun Errore Rilevato (All Systems Operational)</div>
+                      <div style="color:#c9d1e0; font-size:11px;">Tutte le connessioni (K8s API, MongoDB Auth, Prometheus Scraping) sono attive e funzionanti.</div>
+                  </div>
+              </div>
+            </div>`;
+  }
+
   // 1. OPLOG E DISCOVERY
   h+=`<div class="c s2"><div class="c-h"><span>🌍</span><span class="c-t">Global DB Status</span></div>`;
   if(d.oplog_info && d.oplog_info.head_time) {
@@ -931,13 +1066,23 @@ function render(d) {
       h+=row('Operator Pod',`${op.name} (${op.replicas||0}/${op.desired||1})`);
       const rpod = op.pod_name || op.name;
       const isop=openLogs.has(rpod);
-      h+=`<div style="margin-top:6px;margin-bottom:6px"><button id="btn-log-${rpod}" class="btn" style="width:100%;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Nascondi Logs Operator':'▶ Mostra Live Logs Operator'}</button></div>`;
+      h+=`<div style="margin-top:6px;margin-bottom:6px;display:flex;gap:6px">
+             <button id="btn-log-${rpod}" class="btn" style="flex:1;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Nascondi Logs Operator':'▶ Mostra Live Logs Operator'}</button>
+             <button onclick="promptDownloadLog('${op.namespace}', '${rpod}')" class="btn" style="padding:4px 8px;font-size:10px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Scarica (.txt)</button>
+          </div>`;
       h+=`<pre id="log-${rpod}" class="term" style="display:${isop?'block':'none'};margin-top:4px">${logCache[rpod]||'Caricamento in corso...'}</pre>`;
   }
   h+=row('CRDs Trovati',`<span class="pur">${crds.length}</span>`);
   h+=row('Pod mongot',`<span class="blu">${pods.length}</span>`);
   h+=row('Indici di Ricerca',`<span class="grn">${idxs.length}</span>`);
   h+=row('PVC',`${pvcs.length}`) + row('Services',`${svcs.length}`);
+  const helm=d.helm_releases||[];
+  if (helm.length > 0) {
+      helm.forEach(r => {
+          const stColor = r.status === 'deployed' ? '#00e676' : '#ff1744';
+          h += row(`Helm: ${r.namespace}`, `<span style="color:${stColor}" title="Aggiornato: ${r.modifiedAt_str}">${r.name} (Rev ${r.revision}) - ${r.status}</span>`);
+      });
+  }
   h+=`</div>`;
 
   // 2. SRE ADVISOR PANEL
@@ -974,7 +1119,10 @@ function render(d) {
 
     // Live Logs Persistenti
     const isLogOpen = openLogs.has(p.name);
-    h += `<button id="btn-log-${p.name}" class="btn" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Nascondi Logs' : '▶ Mostra Live Logs del Pod'}</button>`;
+    h += `<div style="display:flex;gap:6px;margin-top:10px">
+            <button id="btn-log-${p.name}" class="btn" style="flex:1" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Nascondi Logs' : '▶ Mostra Live Logs del Pod'}</button>
+            <button onclick="promptDownloadLog('${p.namespace}', '${p.name}')" class="btn" style="padding:6px 12px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Scarica Log (.txt)</button>
+          </div>`;
     h += `<pre id="log-${p.name}" class="term" style="display:${isLogOpen ? 'block' : 'none'}">${logCache[p.name] || 'Caricamento in corso...'}</pre>`;
 
     if(!prom.available){
@@ -1202,6 +1350,16 @@ async function fetchM(){
         $('err').innerHTML='<b>\u26A0 Rete / Connessione fallita:</b> Impossibile contattare il server Python ('+e.message+')';
     }
 }
+
+function promptDownloadLog(ns, pod) {
+    let t = prompt(`Quanti log vuoi scaricare per ${pod}?\nOpzioni: 10m (ultimi 10 min), 1h (ultima ora), 24h, all (tutto)\n`, "1h");
+    if (!t) return;
+    const t_param = ['10m','1h','24h'].includes(t) ? t : 'all';
+    let filterErr = confirm(`Vuoi estrarre SOLO le righe contenenti errori (Error, Fatal, Exception)?\n\n[OK] = Solo Errori\n[Annulla] = Log Completo`);
+    let lvl = filterErr ? 'error' : 'all';
+    window.open(`/api/download_logs/${ns}/${pod}?time=${t_param}&level=${lvl}`, '_blank');
+}
+
 fetchM();setR();
 </script></body></html>"""
     return Response(HTML, mimetype="text/html")

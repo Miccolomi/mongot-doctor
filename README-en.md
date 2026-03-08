@@ -8,12 +8,14 @@ This tool is built to go beyond standard Prometheus metrics. It correlates real-
 
 ## ✨ Key Features
 
-* 🧠 **Integrated SRE Advisor**: Analyzes your configuration in real-time and flags violations of official MongoDB Best Practices (e.g., Insufficient disk space for index rebuilds, I/O bottlenecks, CPU under-provisioning vs QPS, unconsolidated indexes).
-* 📊 **Prometheus Triple-Fallback Scraper**: Fetches Prometheus metrics from `mongot` pods. If run from outside the cluster (e.g., from your local Mac), it bypasses network restrictions using dynamic K8s API tunnels (Proxy or Exec `wget`).
-* 🔎 **Smart Index Monitoring**: Detects both Full-Text (`$search`) and Vector Search (`$vectorSearch`) indexes. It actively bypasses native MongoDB API limitations to count indexed documents in real-time and auto-corrects "ghost" statuses in the database.
-* ⏱️ **Global Oplog Tracking**: Monitors the MongoDB cluster's "Oplog Head" to immediately highlight if your search nodes are accumulating *Replication Lag*.
-* 📜 **Persistent Live Logs**: Features an integrated UI terminal to stream individual K8s pod logs in real-time without ever touching the CLI.
-* 🚨 **OOMKilled & K8s Warnings Detection**: Instantly alerts you if a pod suffered an *Out Of Memory* crash or if there are scheduling-level Warning events in Kubernetes.
+* 🧠 **Integrated SRE Advisor**: Analyzes your configuration in real-time and flags violations of Best Practices (e.g. Insufficient disk space, I/O bottlenecks, CPU under-provisioning, MMap OOMKilled Risk).
+* 🌊 **Atlas Search Sync Pipeline Analyzer**: End-to-end visualization of the active Change Stream pipeline (`DB ➔ Change Stream ➔ RAM ➔ Lucene`), computing the actual real-time Replication Lag between MongoDB components.
+* ⏱️ **Predictive SRE (Oplog Window)**: Actively monitors the MongoDB Oplog Replication Window to detect unacceptable `mongot` lag and prevent catastrophic `Initial Sync` scenarios before they occur.
+* 🩺 **Universal K8s Diagnostics**: Instantly discovers MongoDB Helm Charts, tracks Kubernetes and Operator versions in use, and dynamically maps all relevant PVCs, Services, and Pods.
+* 📜 **Log Management & Export**: Built-in Live terminal for streaming Operator and `mongot` pod logs, featuring direct complete archive downloads with time and severity (error) filtering.
+* 🚨 **Global Error Handling**: Proactive UI alerts that gracefully intercept and explicitly highlight any K8s RBAC permission issues, network timeouts, or MongoDB auth failures on the dashboard.
+* 📊 **Prometheus Triple-Fallback Scraper**: Fetches Prometheus metrics from pods bypassing network restrictions out-of-cluster using dynamic K8s API tunnels (Proxy or Exec `wget`).
+* 🔎 **Smart Index Monitoring**: Auto-detects both `$search` and `$vectorSearch` indexes. It actively bypasses native MongoDB limitations to accurately count indexed documents and fixes "ghost" states.
 
 ## 📋 Requirements
 
