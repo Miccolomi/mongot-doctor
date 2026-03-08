@@ -231,6 +231,21 @@ def get_pod_metrics() -> dict:
 
 
 # ── MongoDB & Prometheus ────────────────────────────────
+def get_mongo_vitals() -> dict:
+    vitals = {"connections_active": 0, "connections_available": 0, "active_writers": 0, "ops_insert": 0, "ops_update": 0, "ops_delete": 0}
+    if not mongo_client: return vitals
+    try:
+        status = mongo_client.admin.command("serverStatus")
+        vitals["connections_active"] = status.get("connections", {}).get("current", 0)
+        vitals["connections_available"] = status.get("connections", {}).get("available", 0)
+        vitals["active_writers"] = status.get("globalLock", {}).get("activeClients", {}).get("writers", 0)
+        opc = status.get("opcounters", {})
+        vitals["ops_insert"] = opc.get("insert", 0)
+        vitals["ops_update"] = opc.get("update", 0)
+        vitals["ops_delete"] = opc.get("delete", 0)
+    except Exception: pass
+    return vitals
+
 def get_oplog_info() -> dict:
     info = {"head_time": None, "tail_time": None, "window_hours": 0, "head_timestamp": 0}
     if not mongo_client: return info
@@ -426,7 +441,8 @@ def get_k8s_version() -> str:
 metrics_cache = {
     "data": {},
     "timestamp": 0,
-    "last_scrape": {} # {pod_name: {"time": float, "applicable_updates": float}}
+    "last_scrape": {}, # {pod_name: {"time": float, "applicable_updates": float}}
+    "last_mongo": {} # {"time": float, "ops_insert": int, "ops_update": int, "ops_delete": int}
 }
 
 @app.route("/metrics")
@@ -438,6 +454,24 @@ def metrics():
         return jsonify(metrics_cache["data"])
 
     t0 = time.time()
+    
+    # Mongo Vitals Logic & Rate calculation
+    vitals = get_mongo_vitals()
+    last_m = metrics_cache["last_mongo"]
+    if "time" in last_m:
+        dt = now - last_m["time"]
+        if dt > 0:
+            vitals["ops_insert_sec"] = max(0, int((vitals["ops_insert"] - last_m["ops_insert"]) / dt))
+            vitals["ops_update_sec"] = max(0, int((vitals["ops_update"] - last_m["ops_update"]) / dt))
+            vitals["ops_delete_sec"] = max(0, int((vitals["ops_delete"] - last_m["ops_delete"]) / dt))
+    else:
+        vitals["ops_insert_sec"] = vitals["ops_update_sec"] = vitals["ops_delete_sec"] = 0
+
+    metrics_cache["last_mongo"] = {
+        "time": now, "ops_insert": vitals["ops_insert"], 
+        "ops_update": vitals["ops_update"], "ops_delete": vitals["ops_delete"]
+    }
+    
     res = {
         "k8s_version": get_k8s_version(),
         "operator": discover_operator_info(),
@@ -447,6 +481,7 @@ def metrics():
         "mongot_services": get_mongot_services(),
         "pod_metrics": get_pod_metrics(),
         "oplog_info": get_oplog_info(),
+        "mongo_vitals": vitals,
         "search_indexes": get_search_indexes(),
         "search_perf": get_search_perf_from_profiler(),
         "mongo_connected": mongo_client is not None,
@@ -891,7 +926,9 @@ function render(d) {
   h+=`<div class="c s2"><div class="c-h"><span>📋</span><span class="c-t">K8s Discovery</span></div>`;
   h+=row('K8s Cluster',`<span class="cyn">${d.k8s_version||'N/A'}</span>`);
   if(op.name) {
-      h+=row('Operator',`${op.name} (${op.replicas||0}/${op.desired||1})`);
+      const opVer = op.image && op.image.includes(':') ? op.image.split(':').pop() : 'N/A';
+      h+=row('Operator Ver.',`<span class="pur">${opVer}</span>`);
+      h+=row('Operator Pod',`${op.name} (${op.replicas||0}/${op.desired||1})`);
       const rpod = op.pod_name || op.name;
       const isop=openLogs.has(rpod);
       h+=`<div style="margin-top:6px;margin-bottom:6px"><button id="btn-log-${rpod}" class="btn" style="width:100%;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Nascondi Logs Operator':'▶ Mostra Live Logs Operator'}</button></div>`;
@@ -1019,6 +1056,7 @@ function render(d) {
     const m_urlParams = new URLSearchParams(window.location.search);
     const mergeThreshold = parseFloat(m_urlParams.get('merge_threshold')) || 3.0;
 
+    const vitals = d.mongo_vitals || {};
     let lag_sec = idx.change_stream_lag_sec || 0; // Estratto direttamente da mongot Prometheus!
     let lag_str = `${lag_sec.toFixed(1)}s`; let lag_color = "#00e676";
     if (lag_sec > 120) { lag_str = `${lag_sec.toFixed(1)}s ritardo`; lag_color = "#ff1744"; }
@@ -1063,11 +1101,12 @@ function render(d) {
           <div class="pipe-flow">
             <div class="pipe-line"></div>
             
-            <div class="pipe-node-wrapper">
+            <div class="pipe-node-wrapper" title="Connessioni db: ${vitals.connections_active} / Lock attivi: ${vitals.active_writers}">
               <div class="pipe-node pn-ok">
                 <span class="pipe-lbl">MongoDB</span>
-                <span class="pipe-val">Oplog</span>
-                <span class="pipe-sub">Tailing</span>
+                <span class="pipe-val" style="font-size:14px">Oplog</span>
+                <span class="pipe-sub">Conn: ${fN(vitals.connections_active)} | Lcks: ${vitals.active_writers}</span>
+                <span class="pipe-sub" style="color:#00e676; font-size:10px; margin-top:6px; font-weight:bold;">Write Ops: + ${fN(vitals.ops_insert_sec + vitals.ops_update_sec + vitals.ops_delete_sec)}/s</span>
               </div>
               <div class="pipe-desc">Origine dati.<br>Registra ogni modifica al database.</div>
             </div>
