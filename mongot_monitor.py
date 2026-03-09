@@ -343,7 +343,7 @@ def get_search_perf_from_profiler(errors: list = None) -> dict:
                 for doc in db["system.profile"].find(query).sort("ts", -1).limit(500):
                     all_durations.append(doc.get("millis", 0))
             except Exception as e:
-                pass # Profiling setup may be disabled, ignhours silently for db scope
+                pass # Profiling setup may be disabled, ignore silently for db scope
         if all_durations:
             perf["total_queries_5m"] = len(all_durations)
             perf["queries_per_sec"] = round(len(all_durations) / window_sec, 2)
@@ -378,7 +378,7 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
         return result
 
     if hasattr(text, "data"): text = text.data
-    if isinstance(text, bytes): text = text.decode('utf-8', errors='ignhours')
+    if isinstance(text, bytes): text = text.decode('utf-8', errors='ignore')
 
     result["available"] = True
     raw = {}
@@ -400,7 +400,7 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
             "search_failures": g("mongot_command_searchCommandFailure_total"),
             "vectorsearch_latency_sec": g("mongot_command_vectorSearchCommandTotalLatency_seconds_max"),
             "vectorsearch_failures": g("mongot_command_vectorSearchCommandFailure_total"),
-            "getmhours_latency_sec": g("mongot_command_getMoresCommandTotalLatency_seconds_max"),
+            "getmores_latency_sec": g("mongot_command_getMoresCommandTotalLatency_seconds_max"),
             "manage_index_latency_sec": g("mongot_command_manageSearchIndexCommandTotalLatency_seconds_max"),
         },
         "jvm": {
@@ -666,7 +666,7 @@ select:hover{border-color:#00e676;background:#00e67633}
 @media(max-width:1200px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.grid{grid-template-columns:1fr}}
 .c{background:linear-gradient(135deg,#0d1117,#111827);border:1px solid #1e2740;border-radius:12px;padding:18px 20px;position:relative;overflow:hidden}
-.c::befhours{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c4dff,#00b0ff 50%,transparent);opacity:0.4}
+.c::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c4dff,#00b0ff 50%,transparent);opacity:0.4}
 .c-h{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .c-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394}
 .s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}
