@@ -70,7 +70,7 @@ def discover_mongodbsearch_crds(errors: list = None) -> list:
     try:
         namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else [ns.metadata.name for ns in k8s_v1.list_namespace().items]
     except Exception as e:
-        if errors is not None: errors.append(f"K8s API Error (Lettura namespaces per CRDs): {str(e)}")
+        if errors is not None: errors.append(f"K8s API Error (Reading namespaces for CRDs): {str(e)}")
         namespaces = [TARGET_NAMESPACE] if TARGET_NAMESPACE else ["mongodb", "default"]
         
     for ns in namespaces:
@@ -87,7 +87,7 @@ def discover_mongodbsearch_crds(errors: list = None) -> list:
                     "log_level": spec.get("logLevel", "INFO")
                 })
         except Exception as e: 
-            if errors is not None: errors.append(f"K8s API Error (MongoDBSearch CRD nel ns '{ns}'): {str(e)}")
+            if errors is not None: errors.append(f"K8s API Error (MongoDBSearch CRD in ns '{ns}'): {str(e)}")
     return crds
 
 def discover_operator_info(errors: list = None) -> dict:
@@ -112,7 +112,7 @@ def discover_operator_info(errors: list = None) -> dict:
                                         pod_name = p.metadata.name
                                         break
                             except Exception as e: 
-                                if errors is not None: errors.append(f"K8s API Error (Pod list per Operator nel ns '{ns}'): {str(e)}")
+                                if errors is not None: errors.append(f"K8s API Error (Pod list for Operator in ns '{ns}'): {str(e)}")
 
                         return {
                             "name": dep.metadata.name, "namespace": ns, "pod_name": pod_name,
@@ -120,7 +120,7 @@ def discover_operator_info(errors: list = None) -> dict:
                             "replicas": dep.status.ready_replicas or 0, "desired": dep.spec.replicas or 1
                         }
             except Exception as e: 
-                if errors is not None: errors.append(f"K8s API Error (Deployment list per Operator nel ns '{ns}'): {str(e)}")
+                if errors is not None: errors.append(f"K8s API Error (Deployment list for Operator in ns '{ns}'): {str(e)}")
     except Exception as e: 
         if errors is not None: errors.append(f"K8s API Error (Operator Discovery): {str(e)}")
     return {}
@@ -190,7 +190,7 @@ def discover_mongot_pods(errors: list = None) -> list:
                 "warnings": get_pod_warnings(pod.metadata.namespace, pod.metadata.name)
             })
     except Exception as e:
-        log.error(f"Errore discovery pod K8s: {e}")
+        log.error(f"K8s pod discovery error: {e}")
         if errors is not None: errors.append(f"K8s API Error (Pod Discovery): {str(e)}")
     return pods
 
@@ -257,7 +257,7 @@ def get_mongo_vitals(errors: list = None) -> dict:
         vitals["ops_update"] = opc.get("update", 0)
         vitals["ops_delete"] = opc.get("delete", 0)
     except Exception as e: 
-        if errors is not None: errors.append(f"MongoDB Error (Lettura serverStatus): {str(e)}")
+        if errors is not None: errors.append(f"MongoDB Error (Reading serverStatus): {str(e)}")
     return vitals
 
 def get_oplog_info(errors: list = None) -> dict:
@@ -288,8 +288,8 @@ def get_oplog_info(errors: list = None) -> dict:
             info["window_hours"] = round(diff_sec / 3600, 2)
             
     except Exception as e:
-        log.error(f"Errore Oplog: {e}")
-        if errors is not None: errors.append(f"MongoDB Error (Lettura Oplog per lag): {str(e)}")
+        log.error(f"Oplog Error: {e}")
+        if errors is not None: errors.append(f"MongoDB Error (Reading Oplog for lag): {str(e)}")
     return info
 
 
@@ -321,7 +321,7 @@ def get_search_indexes(errors: list = None) -> list:
                 except Exception as e:
                     if errors is not None: errors.append(f"MongoDB Error (List search indexes in {db_name}.{coll_name}): {str(e)}")
     except Exception as e:
-        if errors is not None: errors.append(f"MongoDB Error (Lettura database/collections): {str(e)}")
+        if errors is not None: errors.append(f"MongoDB Error (Reading database/collections): {str(e)}")
     return indexes
 
 def get_search_perf_from_profiler(errors: list = None) -> dict:
@@ -343,12 +343,12 @@ def get_search_perf_from_profiler(errors: list = None) -> dict:
                 for doc in db["system.profile"].find(query).sort("ts", -1).limit(500):
                     all_durations.append(doc.get("millis", 0))
             except Exception as e:
-                pass # Profiling setup may be disabled, ignore silently for db scope
+                pass # Profiling setup may be disabled, ignhours silently for db scope
         if all_durations:
             perf["total_queries_5m"] = len(all_durations)
             perf["queries_per_sec"] = round(len(all_durations) / window_sec, 2)
     except Exception as e: 
-        if errors is not None: errors.append(f"MongoDB Error (Lettura system.profile per profiler): {str(e)}")
+        if errors is not None: errors.append(f"MongoDB Error (Reading system.profile for profiler): {str(e)}")
     return perf
 
 def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: int, errors: list = None) -> dict:
@@ -371,14 +371,14 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
                 )
             except Exception as e2:
                 scrape_errs.append(f"API Proxy: {str(e2)}")
-                log.debug(f"Scrape fallito via proxy per {pod_name}: {e2}")
+                log.debug(f"Proxy scrape failed for {pod_name}: {e2}")
 
     if not text: 
-        if errors is not None: errors.append(f"Network Error (Prometheus scrape fallito per {pod_name}:{port}) -> " + " | ".join(scrape_errs))
+        if errors is not None: errors.append(f"Network Error (Prometheus scrape failed for {pod_name}:{port}) -> " + " | ".join(scrape_errs))
         return result
 
     if hasattr(text, "data"): text = text.data
-    if isinstance(text, bytes): text = text.decode('utf-8', errors='ignore')
+    if isinstance(text, bytes): text = text.decode('utf-8', errors='ignhours')
 
     result["available"] = True
     raw = {}
@@ -400,7 +400,7 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
             "search_failures": g("mongot_command_searchCommandFailure_total"),
             "vectorsearch_latency_sec": g("mongot_command_vectorSearchCommandTotalLatency_seconds_max"),
             "vectorsearch_failures": g("mongot_command_vectorSearchCommandFailure_total"),
-            "getmore_latency_sec": g("mongot_command_getMoreCommandTotalLatency_seconds_max"),
+            "getmhours_latency_sec": g("mongot_command_getMoresCommandTotalLatency_seconds_max"),
             "manage_index_latency_sec": g("mongot_command_manageSearchIndexCommandTotalLatency_seconds_max"),
         },
         "jvm": {
@@ -454,14 +454,14 @@ from flask import jsonify, render_template_string, request, Response
 # ── API & HTML ──────────────────────────────────────────
 @app.route("/api/logs/<namespace>/<pod_name>")
 def pod_logs(namespace, pod_name):
-    if not k8s_v1: return jsonify({"error": "K8s API non disponibile"}), 500
+    if not k8s_v1: return jsonify({"error": "K8s API not available"}), 500
     try:
         return jsonify({"logs": k8s_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=50)})
     except Exception as e: return jsonify({"error": str(e)}), 500
 
 @app.route("/api/download_logs/<namespace>/<pod_name>")
 def download_logs(namespace, pod_name):
-    if not k8s_v1: return "K8s API non disponibile", 500
+    if not k8s_v1: return "K8s API not available", 500
     try:
         t_param = request.args.get('time', 'all')
         lvl_param = request.args.get('level', 'all').lower()
@@ -485,7 +485,7 @@ def download_logs(namespace, pod_name):
                 if "error" in l_lower or "fatal" in l_lower or "exception" in l_lower or "warning" in l_lower:
                     filtered_lines.append(line)
             final_log_data = "\n".join(filtered_lines)
-            if not final_log_data: final_log_data = "Nessun errore rilevato in questo arco temporale."
+            if not final_log_data: final_log_data = "No errors detected in this timeframe."
         else:
             final_log_data = raw_logs
             
@@ -495,7 +495,7 @@ def download_logs(namespace, pod_name):
             headers={"Content-disposition": f"attachment; filename={pod_name}_logs_{t_param}_{lvl_param}.txt"}
         )
     except Exception as e:
-        return f"Errore: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
 def get_k8s_version() -> str:
     if not K8S_AVAILABLE or not k8s_client: return "N/A"
@@ -594,7 +594,7 @@ def metrics():
         "search_indexes": get_search_indexes(global_errors),
         "search_perf": get_search_perf_from_profiler(global_errors),
         "helm_releases": get_helm_releases(global_errors),
-        "global_errors": global_errors, # Raccoglie tutti gli errori di questo ciclo
+        "global_errors": global_errors, # Collects all errors of this cycle
         "mongo_connected": mongo_client is not None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "_collect_ms": 0,
@@ -666,7 +666,7 @@ select:hover{border-color:#00e676;background:#00e67633}
 @media(max-width:1200px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.grid{grid-template-columns:1fr}}
 .c{background:linear-gradient(135deg,#0d1117,#111827);border:1px solid #1e2740;border-radius:12px;padding:18px 20px;position:relative;overflow:hidden}
-.c::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c4dff,#00b0ff 50%,transparent);opacity:0.4}
+.c::befhours{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c4dff,#00b0ff 50%,transparent);opacity:0.4}
 .c-h{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .c-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394}
 .s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}
@@ -768,14 +768,14 @@ async function toggleLogs(ns, pod) {
   if(openLogs.has(pod)) {
       openLogs.delete(pod);
       if($(`log-${pod}`)) $(`log-${pod}`).style.display = 'none';
-      if($(`btn-log-${pod}`)) $(`btn-log-${pod}`).innerText = pod.includes('operator') ? '▶ Mostra Live Logs Operator' : '▶ Mostra Live Logs del Pod';
+      if($(`btn-log-${pod}`)) $(`btn-log-${pod}`).innerText = pod.includes('operator') ? '▶ Show Live Operator Logs' : '▶ Show Live Pod Logs';
   } else {
       openLogs.add(pod);
       if($(`log-${pod}`)) {
           $(`log-${pod}`).style.display = 'block';
-          $(`log-${pod}`).innerText = "Caricamento in corso...";
+          $(`log-${pod}`).innerText = "Loading...";
       }
-      if($(`btn-log-${pod}`)) $(`btn-log-${pod}`).innerText = pod.includes('operator') ? '▼ Nascondi Logs Operator' : '▼ Nascondi Logs';
+      if($(`btn-log-${pod}`)) $(`btn-log-${pod}`).innerText = pod.includes('operator') ? '▼ Hide Operator Logs' : '▼ Hide Logs';
       await fetchAndUpdateLog(ns, pod);
   }
 }
@@ -785,7 +785,7 @@ async function fetchAndUpdateLog(ns, pod) {
   try {
       const r = await fetch(`/api/logs/${ns}/${pod}`);
       const d = await r.json();
-      logCache[pod] = d.logs || "Nessun log disponibile.";
+      logCache[pod] = d.logs || "No logs available.";
       const el = $(`log-${pod}`);
       if(el) {
           const cTop = el.scrollTop, cH = el.scrollHeight, cClient = el.clientHeight;
@@ -794,7 +794,7 @@ async function fetchAndUpdateLog(ns, pod) {
           el.scrollTop = atBot ? el.scrollHeight : cTop;
       }
   } catch(e) {
-      if($(`log-${pod}`)) $(`log-${pod}`).innerHTML = `<span style="color:red">Errore: ${e.message}</span>`;
+      if($(`log-${pod}`)) $(`log-${pod}`).innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
   }
 }
 
@@ -816,35 +816,35 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
             if(ratio < minHeadroom) { minHeadroom = ratio; worstPod = p.name; }
             if(dsk.data_path_free_bytes < requiredFree) {
                 diskStatus.state = 'CRITICAL';
-                diskStatus.val = `Sul pod ${p.name}, lo spazio libero (${fB(dsk.data_path_free_bytes)}) è INFERIORE al 125% della dimensione indici attuale (${fB(requiredFree)} richiesti). Rischio blocco!`;
+                diskStatus.val = `On pod ${p.name}, the free space (${fB(dsk.data_path_free_bytes)}) is LESS than 125% of current index size (${fB(requiredFree)} required). Risk of stall!`;
             }
         }
     });
     if(diskStatus.state === 'PASSED') {
-        diskStatus.val = `Tutti i pod hanno spazio libero > 125% della dimensione usata (Indice di sicurezza peggiore: ${(minHeadroom*100).toFixed(0)}% su ${worstPod||'N/A'}).`;
+        diskStatus.val = `All pods have free space > 125% of the used size (Worst safety index: ${(minHeadroom*100).toFixed(0)}% on ${worstPod||'N/A'}).`;
     }
 
-    // 2. Consolidamento Indici
+    // 2. Index Consolidation
     let idxStatus = { state: 'PASSED', text: '', val: '' };
     const nsCounts = {};
     idxs.forEach(i => nsCounts[i.ns] = (nsCounts[i.ns]||0)+1);
     const badNs = Object.entries(nsCounts).filter(([ns, c]) => c > 1);
     if(badNs.length > 0) {
         idxStatus.state = 'WARNING';
-        idxStatus.val = `Rilevati indici multipli sulle collection: ${badNs.map(([ns,c])=>`${ns} (${c})`).join(', ')}. Azione: Unificali in un singolo indice dinamico.`;
+        idxStatus.val = `Multiple indexes detected on collections: ${badNs.map(([ns,c])=>`${ns} (${c})`).join(', ')}. Action: Consolidate into a single dynamic index.`;
     } else {
-        idxStatus.val = `Nessuna collection possiede più di un indice di ricerca. Ottimo.`;
+        idxStatus.val = `No collection has more than one search index. Optimal.`;
     }
 
     // 3. I/O Bottleneck
-    let ioStatus = { state: 'PASSED', text: '', val: 'Nessun collo di bottiglia I/O e Replica Lag rilevato sui dischi k8s.' };
+    let ioStatus = { state: 'PASSED', text: '', val: 'No I/O bottleneck and Replica Lag detected on K8s disks.' };
     pods.forEach(p => {
         const cat = (promAll[p.name] && promAll[p.name].categories) || {};
         const qLen = cat.disk ? cat.disk.queue_length : 0;
         const lag = cat.indexing ? cat.indexing.change_stream_lag_sec : 0;
         if(qLen > 10 && lag > 5) {
             ioStatus.state = 'CRITICAL';
-            ioStatus.val = `Pod ${p.name}: Coda disco ALTA (${qLen}) e Oplog Lag in crescita (${lag}s). Azione: Scala classe Storage / aumenta IOPS PVC.`;
+            ioStatus.val = `Pod ${p.name}: HIGH disk queue (${qLen}) and Oplog Lag increasing (${lag}s). Action: Scale Storage class / increase PVC IOPS.`;
         }
     });
 
@@ -852,7 +852,7 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
     let qpsStatus = { state: 'PASSED', text: '', val: '' };
     let totalCores = 0;
     pods.forEach(p => totalCores += p.cpu_limit_cores);
-    if(totalCores === 0) { // Fallback su process metrics se K8s limits assenti
+    if(totalCores === 0) { // Fallback on process metrics se K8s limits assenti
         pods.forEach(p => {
             const prom = promAll[p.name];
             if(prom && prom.categories.process && prom.categories.process.cpu_count) totalCores = Math.max(totalCores, prom.categories.process.cpu_count);
@@ -862,9 +862,9 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
     const qps = (d.search_perf && d.search_perf.queries_per_sec) ? d.search_perf.queries_per_sec : 0;
     if(qps > totalCores * 10) {
         qpsStatus.state = 'WARNING';
-        qpsStatus.val = `Il cluster gestisce ${qps} QPS con soli ${totalCores} core allocati. Sei sopra il target (1 core per 10 QPS).`;
+        qpsStatus.val = `The cluster handles ${qps} QPS with only ${totalCores} cores allocated. You are above the target (1 core per 10 QPS).`;
     } else {
-        qpsStatus.val = `Allocati ${totalCores} Core per ${qps} QPS totali. Rapporto entro le linee guida.`;
+        qpsStatus.val = `Allocated ${totalCores} Cores for ${qps} total QPS. Ratio within guidelines.`;
     }
 
     // 5. Rischio OOMKilled (Memoria MMap vs Heap)
@@ -880,46 +880,46 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
             const heapRatio = jvm.heap_max_bytes / sysMem.phys_total_bytes;
             if(heapRatio > 0.6) {
                 oomStatus.state = 'WARNING';
-                oomStatus.val = `Pod ${p.name}: Max Heap K8s è impostato al ${(heapRatio*100).toFixed(0)}% del limit RAM totale. Lucene richiede molta RAM (Mmap) per i file off-heap. È consigliato limitare l'Heap al 50% o meno.`;
+                oomStatus.val = `Pod ${p.name}: K8s Max Heap is set to ${(heapRatio*100).toFixed(0)}% of the total RAM limit. Lucene requires significant RAM (Mmap) for off-heap files. It is recommended to limit Heap to 50% or less.`;
             }
         }
     });
     if(hasOomKilled) {
         oomStatus.state = 'CRITICAL';
-        oomStatus.val = `Rilevati eventi OOMKilled! Aumentare le resource requests/limits nel CRD MCK e ridurre il maxCapacityMB di mongot.`;
+        oomStatus.val = `OOMKilled events detected! Increase resource requests/limits in the MCK CRD and reduce mongot maxCapacityMB.`;
     } else if(oomStatus.state === 'PASSED') {
-        oomStatus.val = `Nessun evento OOMKilled rilevato. Limiti heap entro parametri sicuri per allocare RAM ai file di Sistema (Mmap).`;
+        oomStatus.val = `No OOMKilled events detected. Heap limits within safe parameters for allocating RAM to System files (Mmap).`;
     }
     
     // 6. Stato CRD Operator
-    let crdStatus = { state: 'PASSED', text: '', val: 'I CRD gestiti dall\'Operator K8s sono in stato corretto (Running).' };
+    let crdStatus = { state: 'PASSED', text: '', val: 'CRDs managed by the K8s Operator are in a correct state (Running).' };
     d.mongodbsearch_crds.forEach(c => {
         if(c.phase !== 'Running') {
             crdStatus.state = 'CRITICAL';
-            crdStatus.val = `CRD ${c.name} in namespace ${c.namespace} è in stato: ${c.phase}! Il reconciliation dell'Operator MCK è fallito. Controllare i log dell'operator.`;
+            crdStatus.val = `CRD ${c.name} in namespace ${c.namespace} is in state: ${c.phase}! MCK Operator reconciliation failed. Check operator logs.`;
         }
     });
 
     // 7. Storage Class Advisor
-    let storageStatus = { state: 'PASSED', val: 'Nessuna StorageClass palesemente lenta rilevata per i nodi Search.' };
+    let storageStatus = { state: 'PASSED', val: 'No obviously slow StorageClass detected for Search nodes.' };
     if (d.mongot_pvcs && d.mongot_pvcs.length > 0) {
         const slowClasses = d.mongot_pvcs.filter(p => p.storage_class && (p.storage_class.includes('hostpath') || p.storage_class.includes('standard') || p.storage_class.includes('slow')));
         if (slowClasses.length > 0) {
             storageStatus.state = 'WARNING';
-            storageStatus.val = `Trovati PVC associati a StorageClass lente o di default (${slowClasses.map(p=>p.storage_class).join(', ')}). MongoDB Search richiede dischi NVMe/SSD ad alte prestazioni (es. gp3, io2) per l'I/O Lucene.`;
+            storageStatus.val = `Found PVCs associated with slow or default StorageClasses (${slowClasses.map(p=>p.storage_class).join(', ')}). MongoDB Search requires high-performance NVMe/SSD disks (e.g. gp3, io2) for Lucene I/O.`;
         } else {
-            storageStatus.val = `StorageClass rilevate in uso: ${[...new Set(d.mongot_pvcs.map(p=>p.storage_class))].join(', ')}. Assicurati che siano dischi ad alto throughput.`;
+            storageStatus.val = `StorageClasses detected in use: ${[...new Set(d.mongot_pvcs.map(p=>p.storage_class))].join(', ')}. Ensure they are high-throughput disks.`;
         }
     }
 
     // 8. Versioning Advisor
-    let verStatus = { state: 'PASSED', val: `Ambiente aggiornato o versionamento corretto. K8s: ${d.k8s_version||'N/A'}` };
+    let verStatus = { state: 'PASSED', val: `Environment up to date or correct versioning. K8s: ${d.k8s_version||'N/A'}` };
     if (d.operator && d.operator.image) {
         if (d.operator.image.endsWith(':latest')) {
             verStatus.state = 'WARNING';
-            verStatus.val = `L'immagine dell'Operator (${d.operator.image}) usa il tag ':latest'. In produzione (MCK) usare always tag immutabili esatti.`;
+            verStatus.val = `The Operator image (${d.operator.image}) uses the ':latest' tag. In production (MCK), always use exact immutable tags.`;
         } else {
-            verStatus.val = `L'Operator usa un tag esatto immutabile: ${d.operator.image.split(':').pop()||'OK'}. K8s Cluster Version: ${d.k8s_version||'N/A'}.`;
+            verStatus.val = `The Operator uses an exact immutable tag: ${d.operator.image.split(':').pop()||'OK'}. K8s Cluster Version: ${d.k8s_version||'N/A'}.`;
         }
     }
 
@@ -928,50 +928,50 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
     const stIco = { 'PASSED': '🟢 PASSED', 'WARNING': '🟡 WARNING', 'CRITICAL': '🔴 CRIT' };
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Spazio Disco (Regola del 125%)</span><span class="${stCls[diskStatus.state]}">${stIco[diskStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${diskStatus.val}</div>
+            <div class="adv-title"><span>Disk Space (125% Rule)</span><span class="${stCls[diskStatus.state]}">${stIco[diskStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${diskStatus.val}</div>
             <div class="adv-doc">📖 Doc: "Always ensure you have at least 125% of your current index size available as free disk space to accommodate rebuilds."</div>
           </div>`;
           
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Consolidamento Indici</span><span class="${stCls[idxStatus.state]}">${stIco[idxStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${idxStatus.val}</div>
+            <div class="adv-title"><span>Index Consolidation</span><span class="${stCls[idxStatus.state]}">${stIco[idxStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${idxStatus.val}</div>
             <div class="adv-doc">📖 Doc: "Avoid defining multiple, separate search indexes on a single collection. Each index adds overhead."</div>
           </div>`;
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Collo di Bottiglia I/O & Replica</span><span class="${stCls[ioStatus.state]}">${stIco[ioStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${ioStatus.val}</div>
+            <div class="adv-title"><span>I/O Bottleneck & Replica</span><span class="${stCls[ioStatus.state]}">${stIco[ioStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${ioStatus.val}</div>
             <div class="adv-doc">📖 Doc: "If disk I/O queue length is high and replication lag is growing, you need to scale up your hardware."</div>
           </div>`;
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Stato CRD MongoDB Search</span><span class="${stCls[crdStatus.state]}">${stIco[crdStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${crdStatus.val}</div>
+            <div class="adv-title"><span>MongoDB Search CRD Status</span><span class="${stCls[crdStatus.state]}">${stIco[crdStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${crdStatus.val}</div>
             <div class="adv-doc">📖 Doc: "A ReconcileFailed state indicates the Kubernetes Operator cannot apply the desired spec (network issue, resource quota)."</div>
           </div>`;
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Performance Storage Class (PVC)</span><span class="${stCls[storageStatus.state]}">${stIco[storageStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${storageStatus.val}</div>
+            <div class="adv-title"><span>Storage Class Performance (PVC)</span><span class="${stCls[storageStatus.state]}">${stIco[storageStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${storageStatus.val}</div>
             <div class="adv-doc">📖 Doc: "MongoDB requires high performance disks. Using standard or hostPath provisioners might cause MMap flushing issues and severe IO wait."</div>
           </div>`;
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Versionamento K8s Operator (MCK)</span><span class="${stCls[verStatus.state]}">${stIco[verStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${verStatus.val}</div>
+            <div class="adv-title"><span>K8s Operator Versioning (MCK)</span><span class="${stCls[verStatus.state]}">${stIco[verStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${verStatus.val}</div>
             <div class="adv-doc">📖 Doc: "Using the :latest tag on the Kubernetes Operator implies unexpected breaking changes on pod restarts."</div>
           </div>`;
 
     h += `<div class="adv-card">
-            <div class="adv-title"><span>Rapporto CPU / QPS</span><span class="${stCls[qpsStatus.state]}">${stIco[qpsStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${qpsStatus.val}</div>
+            <div class="adv-title"><span>CPU / QPS Ratio</span><span class="${stCls[qpsStatus.state]}">${stIco[qpsStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${qpsStatus.val}</div>
             <div class="adv-doc">📖 Doc: "A general starting point is 1 CPU core for every 10 QPS."</div>
           </div>`;
 
     h += `<div class="adv-card" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
-            <div class="adv-title"><span>Rischio OOMKilled & MMap</span><span class="${stCls[oomStatus.state]}">${stIco[oomStatus.state]}</span></div>
-            <div class="adv-val"><b>Rilevato:</b> ${oomStatus.val}</div>
+            <div class="adv-title"><span>OOMKilled & MMap Risk</span><span class="${stCls[oomStatus.state]}">${stIco[oomStatus.state]}</span></div>
+            <div class="adv-val"><b>Detected:</b> ${oomStatus.val}</div>
             <div class="adv-doc">📖 Doc: "mongot utilizes memory-mapped files. The container memory limit MUST be substantially higher than the internal maxCapacityMB heap."</div>
           </div>`;
 
@@ -988,22 +988,22 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
             if(p_lag > worst_lag_sec) worst_lag_sec = p_lag;
         });
         
-        let opSt = 'ok'; let opMsg = 'Finestra Oplog Ampia e Sicura';
-        let opDoc = `Finestra totale stimata: ${d.oplog_info.window_hours}h. Lag attuale massimo: ${Math.round(worst_lag_sec)}s`;
+        let opSt = 'ok'; let opMsg = 'Ample and Safe Oplog Window';
+        let opDoc = `Estimated total window: ${d.oplog_info.window_hours}h. Max current lag: ${Math.round(worst_lag_sec)}s`;
         
         if (d.oplog_info.window_hours > 0 && worst_lag_sec > 0) {
             let lag_hours = worst_lag_sec / 3600;
             if (lag_hours > (d.oplog_info.window_hours * 0.7)) {
-                opSt = 'crit'; opMsg = 'CRITICO: Mongot Lag ha consumato il +70% dell\'Oplog!';
-                opDoc = "⚠️ Se continua, Mongot perderà il Resume Token e crasherà (Initial Sync obbligata). Aumenta la dimensione dell'Oplog di MongoDB o riavvia mongot!";
+                opSt = 'crit'; opMsg = 'CRITICAL: Mongot Lag has consumed +70% of the Oplog!';
+                opDoc = "⚠️ If this continues, Mongot will lose the Resume Token and crash (forced Initial Sync). Increase MongoDB Oplog size or restart mongot!";
             } else if (lag_hours > (d.oplog_info.window_hours * 0.4)) {
-                opSt = 'warn'; opMsg = 'Attenzione: Mongot in forte ritardo di Replication';
+                opSt = 'warn'; opMsg = 'Warning: Mongot heavily lagging in Replication';
             }
         }
         
         h += `<div class="adv-card" style="margin-top:12px; border-top:1px dashed #1e2740; padding-top:12px; border-bottom:none; margin-bottom:0; padding-bottom:0;">
-                <div class="adv-title"><span>🔥 SRE Predittivo: Oplog Window Exceeded</span><span class="${stCls[opSt]}">${stIco[opSt]}</span></div>
-                <div class="adv-val" style="color:${stCls[opSt]}"><b>Stato:</b> ${opMsg}</div>
+                <div class="adv-title"><span>🔥 Predictive SRE: Oplog Window Exceeded</span><span class="${stCls[opSt]}">${stIco[opSt]}</span></div>
+                <div class="adv-val" style="color:${stCls[opSt]}"><b>Status:</b> ${opMsg}</div>
                 <div class="adv-doc">📖 ${opDoc}</div>
               </div>`;
     }
@@ -1028,7 +1028,7 @@ function render(d) {
   if (d.global_errors && d.global_errors.length > 0) {
       h += `<div class="c s4" style="background:#ff174411; border:1px solid #ff174466; border-left:4px solid #ff1744;">
               <div class="c-h" style="border-bottom:none; margin-bottom:8px;"><span>🚨</span><span class="c-t" style="color:#ff6b6b;font-weight:700">DIAGNOSTIC & CONNECTION ERRORS</span></div>
-              <div style="font-size:11px; color:#c9d1e0; margin-bottom:10px; padding:0 12px;">Il backend Python ha rilevato dei fallimenti di rete o di permessi. Alcune rotte o metriche potrebbero mancare:</div>
+              <div style="font-size:11px; color:#c9d1e0; margin-bottom:10px; padding:0 12px;">The Python backend detected network or permission failures. Some routes or metrics may be missing:</div>
               <ul style="margin:0; padding:0 12px 12px 30px; font-size:11px; color:#ffb4b4; line-height:1.6; font-family:monospace;">`;
       d.global_errors.forEach(err => {
           h += `<li>${err}</li>`;
@@ -1040,8 +1040,8 @@ function render(d) {
               <div style="display:flex; align-items:center; gap:10px;">
                   <span style="font-size:16px;">✅</span>
                   <div>
-                      <div style="color:#00e676; font-weight:700; font-size:12px; margin-bottom:2px; text-transform:uppercase; letter-spacing:1px;">Nessun Errore Rilevato (All Systems Operational)</div>
-                      <div style="color:#c9d1e0; font-size:11px;">Tutte le connessioni (K8s API, MongoDB Auth, Prometheus Scraping) sono attive e funzionanti.</div>
+                      <div style="color:#00e676; font-weight:700; font-size:12px; margin-bottom:2px; text-transform:uppercase; letter-spacing:1px;">No Errors Detected (All Systems Operational)</div>
+                      <div style="color:#c9d1e0; font-size:11px;">All connections (K8s API, MongoDB Auth, Prometheus Scraping) are active and functioning.</div>
                   </div>
               </div>
             </div>`;
@@ -1051,11 +1051,11 @@ function render(d) {
   h+=`<div class="c s2"><div class="c-h"><span>🌍</span><span class="c-t">Global DB Status</span></div>`;
   if(d.oplog_info && d.oplog_info.head_time) {
       h+=row('Oplog Head (Last Write)', `<span style="color:#00e676">${d.oplog_info.head_time}</span>`);
-      h+=row('Oplog Window (Max Lag)', `<span class="${d.oplog_info.window_hours<6?'red':d.oplog_info.window_hours<24?'ylw':'grn'}">${d.oplog_info.window_hours} ore</span>`);
-  } else h+=row('Oplog Info', '<span style="color:#ffab00">Non disponibile</span>');
-  h+=row('MongoDB Conn.', d.mongo_connected?'<span class="grn">Connesso</span>':'<span class="red">N/A</span>');
-  h+=row('K8s API Conn.', (pods.length||crds.length||op.name)?'<span class="grn">Connesso</span>':'<span class="red">N/A</span>');
-  h+=row('Tempo raccolta',`${d._collect_ms||'?'} ms`);
+      h+=row('Oplog Window (Max Lag)', `<span class="${d.oplog_info.window_hours<6?'red':d.oplog_info.window_hours<24?'ylw':'grn'}">${d.oplog_info.window_hours} hours</span>`);
+  } else h+=row('Oplog Info', '<span style="color:#ffab00">Not available</span>');
+  h+=row('MongoDB Conn.', d.mongo_connected?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
+  h+=row('K8s API Conn.', (pods.length||crds.length||op.name)?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
+  h+=row('Collection time',`${d._collect_ms||'?'} ms`);
   h+=`</div>`;
 
   h+=`<div class="c s2"><div class="c-h"><span>📋</span><span class="c-t">K8s Discovery</span></div>`;
@@ -1067,20 +1067,20 @@ function render(d) {
       const rpod = op.pod_name || op.name;
       const isop=openLogs.has(rpod);
       h+=`<div style="margin-top:6px;margin-bottom:6px;display:flex;gap:6px">
-             <button id="btn-log-${rpod}" class="btn" style="flex:1;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Nascondi Logs Operator':'▶ Mostra Live Logs Operator'}</button>
-             <button onclick="promptDownloadLog('${op.namespace}', '${rpod}')" class="btn" style="padding:4px 8px;font-size:10px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Scarica (.txt)</button>
+             <button id="btn-log-${rpod}" class="btn" style="flex:1;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Hide Operator Logs':'▶ Show Live Operator Logs'}</button>
+             <button onclick="promptDownloadLog('${op.namespace}', '${rpod}')" class="btn" style="padding:4px 8px;font-size:10px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Download (.txt)</button>
           </div>`;
-      h+=`<pre id="log-${rpod}" class="term" style="display:${isop?'block':'none'};margin-top:4px">${logCache[rpod]||'Caricamento in corso...'}</pre>`;
+      h+=`<pre id="log-${rpod}" class="term" style="display:${isop?'block':'none'};margin-top:4px">${logCache[rpod]||'Loading...'}</pre>`;
   }
-  h+=row('CRDs Trovati',`<span class="pur">${crds.length}</span>`);
-  h+=row('Pod mongot',`<span class="blu">${pods.length}</span>`);
-  h+=row('Indici di Ricerca',`<span class="grn">${idxs.length}</span>`);
+  h+=row('CRDs Found',`<span class="pur">${crds.length}</span>`);
+  h+=row('mongot Pods',`<span class="blu">${pods.length}</span>`);
+  h+=row('Search Indexes',`<span class="grn">${idxs.length}</span>`);
   h+=row('PVC',`${pvcs.length}`) + row('Services',`${svcs.length}`);
   const helm=d.helm_releases||[];
   if (helm.length > 0) {
       helm.forEach(r => {
           const stColor = r.status === 'deployed' ? '#00e676' : '#ff1744';
-          h += row(`Helm: ${r.namespace}`, `<span style="color:${stColor}" title="Aggiornato: ${r.modifiedAt_str}">${r.name} (Rev ${r.revision}) - ${r.status}</span>`);
+          h += row(`Helm: ${r.namespace}`, `<span style="color:${stColor}" title="Updated: ${r.modifiedAt_str}">${r.name} (Rev ${r.revision}) - ${r.status}</span>`);
       });
   }
   h+=`</div>`;
@@ -1108,11 +1108,11 @@ function render(d) {
     if(m.cpu_millicores!=null)h+=mgItem(m.cpu_millicores.toFixed(0)+'m','CPU (actual)','#00b0ff');
     if(m.memory_bytes!=null)h+=mgItem(fB(m.memory_bytes),'RAM (actual)','#b388ff');
     if(proc.cpu_usage)h+=mgItem((proc.cpu_usage*100).toFixed(1)+'%','JVM CPU','#00e5ff');
-    if(lc.indexes_initialized)h+=mgItem(fN(lc.indexes_initialized),'Indici Init','#00e676');
+    if(lc.indexes_initialized)h+=mgItem(fN(lc.indexes_initialized),'Init Indexes','#00e676');
     h+=`</div>`;
 
     if(p.warnings && p.warnings.length > 0) {
-        h += `<div class="warn-box"><strong style="color:#ffab00">⚠️ Ultimi Eventi K8s:</strong><br>`;
+        h += `<div class="warn-box"><strong style="color:#ffab00">⚠️ Latest K8s Events:</strong><br>`;
         p.warnings.forEach(w => { h += `&bull; <b>${w.reason}</b>: ${w.message} <i style="color:#6b7394">(${w.count}x)</i><br>`; });
         h += `</div>`;
     }
@@ -1120,13 +1120,13 @@ function render(d) {
     // Live Logs Persistenti
     const isLogOpen = openLogs.has(p.name);
     h += `<div style="display:flex;gap:6px;margin-top:10px">
-            <button id="btn-log-${p.name}" class="btn" style="flex:1" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Nascondi Logs' : '▶ Mostra Live Logs del Pod'}</button>
-            <button onclick="promptDownloadLog('${p.namespace}', '${p.name}')" class="btn" style="padding:6px 12px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Scarica Log (.txt)</button>
+            <button id="btn-log-${p.name}" class="btn" style="flex:1" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Hide Logs' : '▶ Show Live Pod Logs'}</button>
+            <button onclick="promptDownloadLog('${p.namespace}', '${p.name}')" class="btn" style="padding:6px 12px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Download Log (.txt)</button>
           </div>`;
-    h += `<pre id="log-${p.name}" class="term" style="display:${isLogOpen ? 'block' : 'none'}">${logCache[p.name] || 'Caricamento in corso...'}</pre>`;
+    h += `<pre id="log-${p.name}" class="term" style="display:${isLogOpen ? 'block' : 'none'}">${logCache[p.name] || 'Loading...'}</pre>`;
 
     if(!prom.available){
-      h+=`<div style="margin-top:14px;font-size:11px;color:#ff6b6b">Nessuna metrica Prometheus trovata. I fallback (Rete, Proxy, Exec) hanno fallito.</div></div>`;
+      h+=`<div style="margin-top:14px;font-size:11px;color:#ff6b6b">No Prometheus metrics found. Fallbacks (Net, Proxy, Exec) failed.</div></div>`;
       return;
     }
 
@@ -1139,7 +1139,7 @@ function render(d) {
     h+=row('$search failures',`<span class="${sc.search_failures>0?'red':'grn'}">${fN(sc.search_failures)}</span>`);
     h+=row('$vectorSearch lat.',`<span class="${sc.vectorsearch_latency_sec>1?'red':sc.vectorsearch_latency_sec>0.3?'ylw':'grn'}">${fMs(sc.vectorsearch_latency_sec)}</span>`);
     h+=row('$vectorSearch fail',`<span class="${sc.vectorsearch_failures>0?'red':'grn'}">${fN(sc.vectorsearch_failures)}</span>`);
-    h+=row('getMore latency',`<span class="blu">${fMs(sc.getmore_latency_sec)}</span>`);
+    h+=row('getMores latency',`<span class="blu">${fMs(sc.getmores_latency_sec)}</span>`);
     h+=row('manageIndex lat.',`<span class="blu">${fMs(sc.manage_index_latency_sec)}</span>`);
     h+=`</div>`;
 
@@ -1148,7 +1148,7 @@ function render(d) {
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
     h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#b388ff;margin-bottom:8px">☕ JVM Heap &amp; GC</div>`;
     h+=`<div style="display:flex;justify-content:center;margin-bottom:6px">${gaugeRing(heapPct,'Heap Used',heapPct>85?'#ff1744':heapPct>65?'#ffab00':'#b388ff',70)}</div>`;
-    h+=row('Usata',`<span class="pur">${fB(jvm.heap_used_bytes)}</span>`);
+    h+=row('Used',`<span class="pur">${fB(jvm.heap_used_bytes)}</span>`);
     h+=row('Max',fB(jvm.heap_max_bytes));
     h+=row('GC pause max',`<span class="${jvm.gc_pause_seconds_max>0.5?'red':jvm.gc_pause_seconds_max>0.1?'ylw':'grn'}">${fMs(jvm.gc_pause_seconds_max)}</span>`);
     h+=row('Buffer used',fB(jvm.buffer_used_bytes));
@@ -1157,21 +1157,21 @@ function render(d) {
     // 3. Indexing Pipeline
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
     h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#00e676;margin-bottom:8px">📥 Indexing Pipeline</div>`;
-    h+=row('Indici in catalogo',`<span class="grn">${fN(idx.indexes_in_catalog)}</span>`);
-    h+=row('CS updates applicati',`<span class="grn">${fN(idx.steady_applicable_updates)}</span>`);
-    h+=row('Batch in corso',`<span class="cyn">${fN(idx.steady_batches_in_progress)}</span>`);
+    h+=row('Indexes in catalog',`<span class="grn">${fN(idx.indexes_in_catalog)}</span>`);
+    h+=row('Applied CS updates',`<span class="grn">${fN(idx.steady_applicable_updates)}</span>`);
+    h+=row('Batches in progress',`<span class="cyn">${fN(idx.steady_batches_in_progress)}</span>`);
     h+=row('Oplog Lag',`<span class="${idx.change_stream_lag_sec>5?'red':'grn'}">${fN(idx.change_stream_lag_sec)} s</span>`);
-    h+=row('Failures imprevisti',`<span class="${idx.steady_unexpected_failures>0?'red':'grn'}">${fN(idx.steady_unexpected_failures)}</span>`);
-    h+=row('Initial sync attivi',`<span class="blu">${fN(idx.initial_sync_in_progress)}</span>`);
+    h+=row('Unexpected failures',`<span class="${idx.steady_unexpected_failures>0?'red':'grn'}">${fN(idx.steady_unexpected_failures)}</span>`);
+    h+=row('Active initial syncs',`<span class="blu">${fN(idx.initial_sync_in_progress)}</span>`);
     h+=`</div>`;
 
     // 4. System Disk
     const diskPct=dsk.data_path_total_bytes>0?((dsk.data_path_total_bytes-dsk.data_path_free_bytes)/dsk.data_path_total_bytes)*100:0;
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
-    h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ffab00;margin-bottom:8px">💾 Disco (data path)</div>`;
+    h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ffab00;margin-bottom:8px">💾 Disk (data path)</div>`;
     h+=`<div style="display:flex;justify-content:center;margin-bottom:6px">${gaugeRing(diskPct,'Disk Used',diskPct>90?'#ff1744':diskPct>75?'#ffab00':'#00e676',70)}</div>`;
-    h+=row('Usato',`<span class="ylw">${fB(dsk.data_path_total_bytes-dsk.data_path_free_bytes)}</span>`);
-    h+=row('Totale',fB(dsk.data_path_total_bytes));
+    h+=row('Used',`<span class="ylw">${fB(dsk.data_path_total_bytes-dsk.data_path_free_bytes)}</span>`);
+    h+=row('Total',fB(dsk.data_path_total_bytes));
     h+=row('Read I/O',fB(dsk.read_bytes));
     h+=row('Write I/O',fB(dsk.write_bytes));
     h+=row('Queue len',`<span class="${dsk.queue_length>5?'red':dsk.queue_length>1?'ylw':'grn'}">${fN(dsk.queue_length)}</span>`);
@@ -1180,19 +1180,19 @@ function render(d) {
     // 5. Lucene Merge Scheduler
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
     h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#00e5ff;margin-bottom:8px">🔀 Lucene Merges</div>`;
-    h+=row('Merge attivi',`<span class="cyn">${fN(luc.running_merges)}</span>`);
-    h+=row('Docs in merge',`<span class="blu">${fN(luc.merging_docs)}</span>`);
-    h+=row('Merge totali',fN(luc.total_merges));
+    h+=row('Active merges',`<span class="cyn">${fN(luc.running_merges)}</span>`);
+    h+=row('Merging docs',`<span class="blu">${fN(luc.merging_docs)}</span>`);
+    h+=row('Total merges',fN(luc.total_merges));
     h+=row('Merge time max',`<span class="ylw">${fMs(luc.merge_time_sec_max)}</span>`);
-    h+=row('Merge scartati',`<span class="${luc.discarded_merges>0?'ylw':'grn'}">${fN(luc.discarded_merges)}</span>`);
+    h+=row('Discarded merges',`<span class="${luc.discarded_merges>0?'ylw':'grn'}">${fN(luc.discarded_merges)}</span>`);
     h+=`</div>`;
 
     // 6. System Memory + Network
     const memPct=mem.phys_total_bytes>0?(mem.phys_inuse_bytes/mem.phys_total_bytes)*100:0;
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
-    h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ff6b6b;margin-bottom:8px">🖥 Sistema &amp; Rete</div>`;
-    h+=row('RAM usata',`<span class="${memPct>90?'red':memPct>75?'ylw':'grn'}">${fB(mem.phys_inuse_bytes)} (${memPct.toFixed(0)}%)</span>`);
-    h+=row('Swap usata',fB(mem.swap_inuse_bytes));
+    h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ff6b6b;margin-bottom:8px">🖥 System &amp; Network</div>`;
+    h+=row('RAM used',`<span class="${memPct>90?'red':memPct>75?'ylw':'grn'}">${fB(mem.phys_inuse_bytes)} (${memPct.toFixed(0)}%)</span>`);
+    h+=row('Swap used',fB(mem.swap_inuse_bytes));
     h+=`<div style="border-top:1px solid #1a1f2e;margin:4px 0;padding-top:4px"></div>`;
     h+=row('Net recv',`<span class="blu">${fB(net.bytes_recv)}</span>`);
     h+=row('Net sent',`<span class="grn">${fB(net.bytes_sent)}</span>`);
@@ -1207,8 +1207,8 @@ function render(d) {
     const vitals = d.mongo_vitals || {};
     let lag_sec = idx.change_stream_lag_sec || 0; // Estratto direttamente da mongot Prometheus!
     let lag_str = `${lag_sec.toFixed(1)}s`; let lag_color = "#00e676";
-    if (lag_sec > 120) { lag_str = `${lag_sec.toFixed(1)}s ritardo`; lag_color = "#ff1744"; }
-    else if (lag_sec > 15) { lag_str = `${lag_sec.toFixed(1)}s ritardo`; lag_color = "#ffab00"; }
+    if (lag_sec > 120) { lag_str = `${lag_sec.toFixed(1)}s delay`; lag_color = "#ff1744"; }
+    else if (lag_sec > 15) { lag_str = `${lag_sec.toFixed(1)}s delay`; lag_color = "#ffab00"; }
     else if (lag_sec > 0.5) { lag_str = `${lag_sec.toFixed(1)}s`; lag_color = "#ffeb3b"; }
 
     // Analizziamo i colli di bottiglia (Bottlenecks)
@@ -1222,7 +1222,7 @@ function render(d) {
     if (idx.steady_batch_sec_max > 2.0) {
         ram_cls = idx.steady_batch_sec_max > 5.0 ? 'pn-crit' : 'pn-warn';
         let av_cls = idx.steady_batch_sec_max > 5.0 ? 'crit-val' : 'warn-val';
-        ram_alert_html = `<span class="${av_cls}">⏳ LENTO: ${idx.steady_batch_sec_max.toFixed(1)}s</span>
+        ram_alert_html = `<span class="${av_cls}">⏳ SLOW: ${idx.steady_batch_sec_max.toFixed(1)}s</span>
                           ${idx.steady_batch_sec_max > 5.0 ? '<div class="crit-badge">BOTTLENECK!</div>' : ''}`;
     }
 
@@ -1232,7 +1232,7 @@ function render(d) {
     if(luc.merge_time_sec_max > (mergeThreshold * 0.5)) {
         disk_cls = luc.merge_time_sec_max > mergeThreshold ? 'pn-crit' : 'pn-warn';
         let d_cls = luc.merge_time_sec_max > mergeThreshold ? 'crit-val' : 'warn-val';
-        disk_alert_html = `<span class="${d_cls}">⏳ LENTO: ${luc.merge_time_sec_max.toFixed(1)}s</span>
+        disk_alert_html = `<span class="${d_cls}">⏳ SLOW: ${luc.merge_time_sec_max.toFixed(1)}s</span>
                            ${luc.merge_time_sec_max > mergeThreshold ? '<div class="crit-badge">BOTTLENECK!</div>' : ''}`;
     }
 
@@ -1240,8 +1240,8 @@ function render(d) {
           <div class="pipe-tit">
             <span>🚀 Sync Pipeline Analyzer</span>
             <div>
-              <span style="color:#facc15; font-size:10px; margin-right:15px; font-weight:normal; cursor:pointer;" onclick="let t=prompt('Inserisci nuova soglia Merge in sec:', '${mergeThreshold}'); if(t) window.location.search='?merge_threshold='+t;">
-                Soglia allarme Merge: <b>${mergeThreshold}s (modifica)</b>
+              <span style="color:#facc15; font-size:10px; margin-right:15px; font-weight:normal; cursor:pointer;" onclick="let t=prompt('Enter new Merge threshold in sec:', '${mergeThreshold}'); if(t) window.location.search='?merge_threshold='+t;">
+                Merge alarm threshold: <b>${mergeThreshold}s (edit)</b>
               </span>
               <span style="color:${lag_color}">Lag Search Sync: <b>${lag_str}</b></span>
             </div>
@@ -1256,30 +1256,30 @@ function render(d) {
                 <span class="pipe-sub">Conn: ${fN(vitals.connections_active)} | Lcks: ${vitals.active_writers}</span>
                 <span class="pipe-sub" style="color:#00e676; font-size:10px; margin-top:6px; font-weight:bold;">Write Ops: + ${fN(vitals.ops_insert_sec + vitals.ops_update_sec + vitals.ops_delete_sec)}/s</span>
               </div>
-              <div class="pipe-desc">Origine dati.<br>Registra ogni modifica al database.</div>
+              <div class="pipe-desc">Data origin.<br>Records every database edittion.</div>
             </div>
             
             <div class="pipe-node-wrapper">
               <div class="pipe-node ${stream_cls}">
                 <span class="pipe-lbl">Stream</span>
-                <span class="pipe-val">${fN(idx.steady_applicable_updates)} <span style="font-size:10px; font-weight:normal; color:#94a3b8">Tot</span></span>
+                <span class="pipe-val">${fN(idx.steady_applicable_updates)} <span style="font-size:10px; font-weight:normal; color:#94a3b8">Total</span></span>
                 <span class="pipe-sub" style="color:#00e676; font-size:11px; font-weight:bold; margin-top:6px">+ ${fN(idx.steady_applicable_updates_sec || 0)}/s</span>
               </div>
-              <div class="pipe-desc">Lettura in tempo reale.<br>Cattura i dati dall'Oplog.</div>
+              <div class="pipe-desc">Real-time reading.<br>Captures data from the Oplog.</div>
             </div>
             
             <div class="pipe-node-wrapper">
               <div class="pipe-node ${ram_cls}">
                 <span class="pipe-lbl">RAM Parse</span>
                 <span class="pipe-val" style="font-size:14px">${fB(jvm.heap_used_bytes)}</span>
-                <span class="pipe-sub">su ${fB(jvm.heap_max_bytes)} Heap</span>
+                <span class="pipe-sub">on ${fB(jvm.heap_max_bytes)} Heap</span>
                 <span class="pipe-sub" style="color:#facc15; font-size:10px; margin-top:6px">${(idx.steady_batch_sec_max * 1000).toFixed(0)} ms lat | CPU: ${(promAll[p.name]?.categories?.process?.cpu_usage || 0).toFixed(1)}%</span>
                 ${ram_alert_html}
               </div>
-              <div class="pipe-desc">Consumo JVM.<br>Ritardi se la CPU o RAM saturano.</div>
+              <div class="pipe-desc">JVM usage.<br>Delays if CPU or RAM saturate.</div>
             </div>
             
-            <div class="pipe-node-wrapper" title="Merge: processo in background di deframmentazione su disco. Anche se sotto sforzo (diventa rosso), i documenti potrebbero essere già ricercabili nei segmenti RAM temporanei. Non indica necessariamente un lag lato utente.">
+            <div class="pipe-node-wrapper" title="Merge: background disk defragmentation. Even under presonre (red), docs may be searchable in RAM segments. Doesn't necessarily mean user-facing lag.">
               <div class="pipe-node ${disk_cls}">
                 <span class="pipe-lbl">Lucene Merge</span>
                 <span class="pipe-val">${fN(luc.total_merges)}</span>
@@ -1287,17 +1287,17 @@ function render(d) {
                 <span class="pipe-sub" style="color:#00b8d4; font-size:10px; margin-top:6px; font-weight:bold;">Disk Queue: ${fN(promAll[p.name]?.categories?.disk?.queue_length || 0)}</span>
                 ${disk_alert_html}
               </div>
-              <div class="pipe-desc">Scrittura su disco.<br>Fonde i dati nell'indice Lucene.</div>
+              <div class="pipe-desc">Disk write.<br>Merges data into the Lucene index.</div>
             </div>
             
-            <div class="pipe-node-wrapper" title="Lag Search Sync: tempo effettivo tra la scrittura su MongoDB e la disponibilità della ricerca. Vede anche i dati nei segmenti RAM prima del merge su disco!">
+            <div class="pipe-node-wrapper" title="Search Sync Lag: actual time between MongoDB write and search availability. Also spans RAM segments before disk merge!">
               <div class="pipe-node ${lag_sec>30?'pn-warn':'pn-ok'}">
                 <span class="pipe-lbl">$search</span>
                 <span class="pipe-val" style="font-size:14px">${lag_sec>30?'OLD':'READY'}</span>
                 <span class="pipe-sub">Query: ${(promAll[p.name]?.categories?.search_commands?.search_latency_sec * 1000 || 0).toFixed(0)} ms</span>
                 <span class="pipe-sub" style="color:#ea15f2; font-size:10px; margin-top:4px; font-weight:bold;">AI Vector: ${(promAll[p.name]?.categories?.search_commands?.vectorsearch_latency_sec * 1000 || 0).toFixed(0)} ms</span>
               </div>
-              <div class="pipe-desc">Indice Atlas Search.<br>Tempi di risposta al client.</div>
+              <div class="pipe-desc">Atlas Search index.<br>Client response times.</div>
             </div>
           </div>
         </div>`;
@@ -1305,13 +1305,13 @@ function render(d) {
     h+=`</div>`;
   });
 
-  if(!pods.length) h+=`<div class="c s4"><div class="empty">Nessun pod mongot trovato</div></div>`;
+  if(!pods.length) h+=`<div class="c s4"><div class="empty">No mongot pod found</div></div>`;
 
   // 4. TABELLA INDICI
   h+=`<div class="c s4"><div class="c-h"><span>📑</span><span class="c-t">Search Indexes (${idxs.length})</span></div>`;
-  if(idxs.length){h+=`<table><thead><tr><th>Nome</th><th>Collection</th><th>Tipo</th><th>Stato</th><th>Queryable</th><th>Documenti</th></tr></thead><tbody>`;
+  if(idxs.length){h+=`<table><thead><tr><th>Name</th><th>Collection</th><th>Type</th><th>Status</th><th>Queryable</th><th>Documents</th></tr></thead><tbody>`;
   idxs.forEach(i=>{const v=i.type==='vectorSearch';h+=`<tr><td style="font-weight:600;color:#e8ecf4">${i.name}</td><td style="font-size:11px">${i.ns}</td><td><span class="tag ${v?'tag-v':'tag-f'}">${v?'VECTOR':'FULL-TEXT'}</span></td><td>${pill(i.status)}</td><td>${i.queryable?'<span class="grn">✓</span>':'<span class="red">✗</span>'}</td><td>${i.num_docs!=null?fN(i.num_docs):'—'}</td></tr>`});
-  h+=`</tbody></table>`}else{h+=`<div class="empty">Nessun indice search trovato nel database</div>`}
+  h+=`</tbody></table>`}else{h+=`<div class="empty">No search index found in the database</div>`}
   h+=`</div>`;
 
   // 5. TABELLA PVCS E SERVICES
@@ -1340,22 +1340,22 @@ async function fetchM(){
         const d=await r.json();
         if(d.error) {
             $('err').style.display='block';
-            $('err').innerHTML='<b>\u26A0 Errore Backend:</b> ' + d.error;
+            $('err').innerHTML='<b>\u26A0 Error Backend:</b> ' + d.error;
             return;
         }
         $('err').style.display='none';
         render(d);
     }catch(e){
         $('err').style.display='block';
-        $('err').innerHTML='<b>\u26A0 Rete / Connessione fallita:</b> Impossibile contattare il server Python ('+e.message+')';
+        $('err').innerHTML='<b>\u26A0 Network / Connection failed:</b> Unable to contact the Python server ('+e.message+')';
     }
 }
 
 function promptDownloadLog(ns, pod) {
-    let t = prompt(`Quanti log vuoi scaricare per ${pod}?\nOpzioni: 10m (ultimi 10 min), 1h (ultima ora), 24h, all (tutto)\n`, "1h");
+    let t = prompt(`How many logs do you want to download for ${pod}?\nOptions: 10m (last 10 mins), 1h (last hour), 24h, all\n`, "1h");
     if (!t) return;
     const t_param = ['10m','1h','24h'].includes(t) ? t : 'all';
-    let filterErr = confirm(`Vuoi estrarre SOLO le righe contenenti errori (Error, Fatal, Exception)?\n\n[OK] = Solo Errori\n[Annulla] = Log Completo`);
+    let filterErr = confirm(`Do you want to extract ONLY rows containing errors (Error, Fatal, Exception)?\n\n[OK] = Errors Only\n[Cancel] = Full Log`);
     let lvl = filterErr ? 'error' : 'all';
     window.open(`/api/download_logs/${ns}/${pod}?time=${t_param}&level=${lvl}`, '_blank');
 }
