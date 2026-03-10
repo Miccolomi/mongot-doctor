@@ -169,6 +169,7 @@ def discover_mongot_pods(errors: list = None) -> list:
 
             containers = []
             cpu_limit_cores = 0.0
+            memory_limit_bytes = 0
             discovered_prom_port = None
 
             for c in (pod.spec.containers or []):
@@ -178,12 +179,24 @@ def discover_mongot_pods(errors: list = None) -> list:
                         discovered_prom_port = p.container_port
 
                 # Estraiamo i CPU Limits per l'Advisor
-                if c.resources and c.resources.limits and "cpu" in c.resources.limits:
-                    cpu_str = c.resources.limits["cpu"]
-                    try:
-                        if cpu_str.endswith("m"): cpu_limit_cores += int(cpu_str[:-1]) / 1000.0
-                        else: cpu_limit_cores += float(cpu_str)
-                    except: pass
+                if c.resources and c.resources.limits:
+                    if "cpu" in c.resources.limits:
+                        cpu_str = str(c.resources.limits["cpu"])
+                        try:
+                            if cpu_str.endswith("m"): cpu_limit_cores += int(cpu_str[:-1]) / 1000.0
+                            else: cpu_limit_cores += float(cpu_str)
+                        except: pass
+                    
+                    if "memory" in c.resources.limits:
+                        mem_str = str(c.resources.limits["memory"])
+                        try:
+                            if mem_str.endswith("Gi"): memory_limit_bytes += float(mem_str[:-2]) * 1024 * 1024 * 1024
+                            elif mem_str.endswith("Mi"): memory_limit_bytes += float(mem_str[:-2]) * 1024 * 1024
+                            elif mem_str.endswith("Ki"): memory_limit_bytes += float(mem_str[:-2]) * 1024
+                            elif mem_str.endswith("G"): memory_limit_bytes += float(mem_str[:-1]) * 1000 * 1000 * 1000
+                            elif mem_str.endswith("M"): memory_limit_bytes += float(mem_str[:-1]) * 1000 * 1000
+                            else: memory_limit_bytes += float(mem_str)
+                        except: pass
 
             for cs in (pod.status.container_statuses or []):
                 last_reason = None
@@ -206,6 +219,7 @@ def discover_mongot_pods(errors: list = None) -> list:
                 "total_restarts": sum(c["restart_count"] for c in containers),
                 "all_ready": all(c["ready"] for c in containers) if containers else False,
                 "cpu_limit_cores": round(cpu_limit_cores, 2),
+                "memory_limit_bytes": int(memory_limit_bytes),
                 "warnings": get_pod_warnings(pod.metadata.namespace, pod.metadata.name),
                 "discovered_prom_port": discovered_prom_port
             })
@@ -993,19 +1007,30 @@ function buildAdvisorHTML(d, pods, promAll, idxs) {
         if(!prom) return;
         const jvm = prom.categories.jvm;
         const sysMem = prom.categories.memory;
-        if(jvm && sysMem && sysMem.phys_total_bytes > 0 && jvm.heap_max_bytes > 0) {
-            const heapRatio = jvm.heap_max_bytes / sysMem.phys_total_bytes;
-            if(heapRatio > 0.6) {
+        
+        let podMemLimit = p.memory_limit_bytes || 0;
+        // Fallback al nodo fisico solo se K8s limits non ci sono
+        if(podMemLimit === 0 && sysMem && sysMem.phys_total_bytes > 0) podMemLimit = sysMem.phys_total_bytes;
+        
+        if(jvm && podMemLimit > 0 && jvm.heap_max_bytes > 0) {
+            const heapRatio = jvm.heap_max_bytes / podMemLimit;
+            
+            if(jvm.heap_max_bytes >= podMemLimit * 0.9) {
+                oomStatus.state = 'CRITICAL';
+                oomStatus.val += `<br>Pod ${p.name}: Max JVM Heap (${fB(jvm.heap_max_bytes)}) is ${(heapRatio*100).toFixed(0)}% of the Pod limit (${fB(podMemLimit)}). High risk of OOMKilled! Set --maxCapacityMB or JVM -Xmx.`;
+            } else if(heapRatio > 0.6 && oomStatus.state !== 'CRITICAL') {
                 oomStatus.state = 'WARNING';
-                oomStatus.val = `Pod ${p.name}: K8s Max Heap is set to ${(heapRatio*100).toFixed(0)}% of the total RAM limit. Lucene requires significant RAM (Mmap) for off-heap files. It is recommended to limit Heap to 50% or less.`;
+                oomStatus.val += `<br>Pod ${p.name}: Max JVM Heap is ${(heapRatio*100).toFixed(0)}% of the Memory limit (${fB(podMemLimit)}). Lucene requires significant free RAM (Mmap) for off-heap files limit Heap to 50% or less.`;
             }
         }
     });
     if(hasOomKilled) {
         oomStatus.state = 'CRITICAL';
-        oomStatus.val = `OOMKilled events detected! Increase resource requests/limits in the MCK CRD and reduce mongot maxCapacityMB.`;
+        oomStatus.val = `<b>OOMKilled events detected!</b> ` + oomStatus.val + `<br>Increase memory limits and ensure mongot maxCapacityMB/JVM Heap is < 50% of the limit.`;
     } else if(oomStatus.state === 'PASSED') {
         oomStatus.val = `No OOMKilled events detected. Heap limits within safe parameters for allocating RAM to System files (Mmap).`;
+    } else {
+        oomStatus.val = oomStatus.val.substring(4); // Rimuove il primo <br>
     }
     
     // 6. Stato CRD Operator
