@@ -645,6 +645,52 @@ def metrics():
     metrics_cache["timestamp"] = now
     return jsonify(res)
 
+@app.route("/healthcheck")
+def healthcheck():
+    status = {"status": "healthy", "mongo_ping": "ok", "k8s_api": "ok", "metrics_status": "ok"}
+    is_unhealthy = False
+    
+    # 1. Mongo Ping
+    if mongo_client:
+        try:
+            t0 = time.time()
+            mongo_client.admin.command('ping')
+            status["mongo_ping"] = f"ok ({round((time.time()-t0)*1000, 1)}ms)"
+        except Exception as e:
+            status["mongo_ping"] = f"failed ({str(e)})"
+            is_unhealthy = True
+    else:
+        status["mongo_ping"] = "not_configured"
+        
+    # 2. K8s API
+    if k8s_v1:
+        try:
+            k8s_v1.list_namespace(limit=1, _request_timeout=2)
+        except Exception as e:
+            status["k8s_api"] = f"failed ({str(e)})"
+            is_unhealthy = True
+    else:
+        status["k8s_api"] = "not_configured"
+        
+    # 3. Metrics Freshness
+    now = time.time()
+    last_scrape_time = metrics_cache.get("timestamp", 0)
+    if last_scrape_time > 0:
+        age = now - last_scrape_time
+        if age > 120:  # Older than 2 minutes means the background process is stuck
+            status["metrics_status"] = f"stale (last scraped {round(age)}s ago)"
+            is_unhealthy = True
+        else:
+            status["metrics_status"] = f"fresh ({round(age)}s ago)"
+    else:
+        status["metrics_status"] = "no_data_yet"
+        
+    if is_unhealthy:
+        status["status"] = "unhealthy"
+        return jsonify(status), 503
+        
+    return jsonify(status), 200
+
 @app.route("/")
 def dashboard():
     HTML = r"""<!DOCTYPE html>
