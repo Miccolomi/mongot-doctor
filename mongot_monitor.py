@@ -147,6 +147,7 @@ def discover_mongot_pods(errors: list = None) -> list:
             pname = pod.metadata.name.lower()
             labels = pod.metadata.labels or {}
             
+            # Identify by label or name
             is_mongot = (
                 labels.get("app.kubernetes.io/component") == "search" or 
                 labels.get("app") == "mongodbsearch" or
@@ -154,13 +155,28 @@ def discover_mongot_pods(errors: list = None) -> list:
                 ("search" in pname and "operator" not in pname)
             )
             
+            # Check containers if labels/names don't match (for standalone deployments)
+            if not is_mongot and pod.spec.containers:
+                for c in pod.spec.containers:
+                    cname = c.name.lower()
+                    img = (c.image or "").lower()
+                    if "mongot" in cname or "mongot" in img or "mongodb-enterprise-search" in img:
+                        is_mongot = True
+                        break
+            
             if not is_mongot or pod.metadata.name in found_pods: continue
             found_pods.add(pod.metadata.name)
 
             containers = []
             cpu_limit_cores = 0.0
+            discovered_prom_port = None
 
             for c in (pod.spec.containers or []):
+                # Cerchiamo porte esposte per Prometheus (es: 9946)
+                for p in (c.ports or []):
+                    if p.container_port and (p.container_port == 9946 or (p.name and "prom" in p.name.lower())):
+                        discovered_prom_port = p.container_port
+
                 # Estraiamo i CPU Limits per l'Advisor
                 if c.resources and c.resources.limits and "cpu" in c.resources.limits:
                     cpu_str = c.resources.limits["cpu"]
@@ -179,15 +195,19 @@ def discover_mongot_pods(errors: list = None) -> list:
                 })
 
             pods.append({
-                "name": pod.metadata.name, "namespace": pod.metadata.namespace,
-                "node": pod.spec.node_name, "pod_ip": pod.status.pod_ip,
+                "name": pod.metadata.name,
+                "namespace": pod.metadata.namespace,
+                "node": pod.spec.node_name,
+                "pod_ip": pod.status.pod_ip,
                 "phase": pod.status.phase,
                 "start_time": pod.status.start_time.isoformat() if pod.status.start_time else None,
+                "age": str(int((datetime.now(timezone.utc) - pod.metadata.creation_timestamp).total_seconds() / 86400)) + "d",
                 "containers": containers,
                 "total_restarts": sum(c["restart_count"] for c in containers),
                 "all_ready": all(c["ready"] for c in containers) if containers else False,
-                "cpu_limit_cores": cpu_limit_cores,
-                "warnings": get_pod_warnings(pod.metadata.namespace, pod.metadata.name)
+                "cpu_limit_cores": round(cpu_limit_cores, 2),
+                "warnings": get_pod_warnings(pod.metadata.namespace, pod.metadata.name),
+                "discovered_prom_port": discovered_prom_port
             })
     except Exception as e:
         log.error(f"K8s pod discovery error: {e}")
@@ -613,12 +633,15 @@ def metrics():
             
     prom_metrics = {}
     for p in res["mongot_pods"]:
-        # Find the correct port for this pod based on its cluster name
-        pod_port = 9946
-        for cluster_name, port in prom_ports.items():
-            if cluster_name in p["name"]:
-                pod_port = port
-                break
+        # Find the correct port for this pod
+        pod_port = p.get("discovered_prom_port", None)
+        
+        if not pod_port:
+            pod_port = 9946 # Default fallback
+            for cluster_name, port in prom_ports.items():
+                if cluster_name in p["name"]:
+                    pod_port = port
+                    break
                 
         metrics = scrape_mongot_prometheus(p["name"], p["namespace"], p.get("pod_ip","127.0.0.1"), pod_port, global_errors)
         
