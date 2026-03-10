@@ -322,7 +322,18 @@ def get_search_indexes(errors: list = None) -> list:
             db = mongo_client[db_name]
             for coll_name in db.list_collection_names():
                 try:
-                    for idx in db[coll_name].list_search_indexes():
+                    # Prima proviamo l'aggregazione nativa (più compatibile con versioni miste PyMongo/MongoDB)
+                    search_indexes = []
+                    try:
+                        search_indexes = list(db[coll_name].aggregate([{"$listSearchIndexes": {}}]))
+                    except Exception:
+                        # Fallback se $listSearchIndexes non è supportato dall'aggregazione
+                        try:
+                            search_indexes = list(db[coll_name].list_search_indexes())
+                        except Exception:
+                            pass
+                            
+                    for idx in search_indexes:
                         idx_info = {
                             "name": idx.get("name", "unknown"),
                             "type": "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText",
