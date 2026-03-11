@@ -203,8 +203,10 @@ Edita `k8s/secret.yaml` con la tua stringa di connessione:
 
 ```yaml
 stringData:
-  MONGODB_URI: "mongodb://user:password@host1:port1,host2:port2/admin?replicaSet=RS&..."
+  MONGODB_URI: "mongodb://user:password@host1:port1,host2:port2/admin?replicaSet=RS&tls=true&tlsAllowInvalidCertificates=true&authSource=admin"
 ```
+
+> Se il tuo cluster richiede SCRAM-SHA-256, aggiungi `&authMechanism=SCRAM-SHA-256` in fondo alla URI.
 
 ### 3. Applica i manifest in ordine
 
@@ -227,17 +229,35 @@ kubectl apply -f k8s/service.yaml
 ```bash
 # Trova il NodePort assegnato
 kubectl get svc mongot-monitor -n mongodb
+# Esempio output: 5050:31855/TCP  →  NodePort = 31855
+```
 
-# Accedi via browser
+**Docker Desktop**: il nodo è `localhost`, quindi:
+```
+http://localhost:<NODE_PORT>
+```
+
+**Cluster remoto** (GKE, EKS, on-prem): usa l'IP di uno dei nodi worker:
+```bash
+kubectl get nodes -o wide   # colonna INTERNAL-IP o EXTERNAL-IP
 http://<NODE_IP>:<NODE_PORT>
 ```
 
-In alternativa con port-forward locale:
+### Note per ambienti di sviluppo locale (Docker Desktop)
 
-```bash
-kubectl port-forward svc/mongot-monitor 5050:5050 -n mongodb
-# Poi: http://localhost:5050
+Se i tuoi nodi MongoDB hanno hostname definiti in `/etc/hosts` sul Mac (es. `work0.mongodb.local → 127.0.0.1`), questi non sono risolvibili dall'interno del pod. Aggiungi un blocco `hostAliases` nel `deployment.yaml` per mapparli all'IP host di Docker Desktop (`192.168.65.254`):
+
+```yaml
+spec:
+  hostAliases:
+    - ip: "192.168.65.254"
+      hostnames:
+        - "work0.mongodb.local"
+        - "work1.mongodb.local"
+        - "work2.mongodb.local"
 ```
+
+In produzione, con hostname reali risolvibili dal cluster, questo blocco non è necessario.
 
 ### Struttura manifest
 
@@ -245,7 +265,7 @@ kubectl port-forward svc/mongot-monitor 5050:5050 -n mongodb
 |:---|:---|
 | `k8s/rbac.yaml` | ServiceAccount + ClusterRole con permessi minimi |
 | `k8s/secret.yaml` | MongoDB URI come K8s Secret |
-| `k8s/deployment.yaml` | Deployment con probe readiness/liveness |
+| `k8s/deployment.yaml` | Deployment con probe liveness (`/healthz`) e readiness (`/healthz`) |
 | `k8s/service.yaml` | NodePort per esporre la dashboard |
 
 > **Namespace**: tutti i manifest usano `mongodb` come namespace di default. Modifica il campo `namespace:` in tutti e 4 i file se il tuo namespace è diverso.
