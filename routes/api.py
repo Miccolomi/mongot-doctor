@@ -93,7 +93,15 @@ def metrics():
     return jsonify(data)
 
 
-# ── Healthcheck ───────────────────────────────────────────────────────────────
+# ── Liveness probe ────────────────────────────────────────────────────────────
+
+@api_bp.route("/healthz")
+def healthz():
+    """Lightweight liveness probe — returns 200 if Flask is running."""
+    return jsonify({"status": "alive"}), 200
+
+
+# ── Healthcheck ────────────────────────────────────────────────────────────────
 
 @api_bp.route("/healthcheck")
 def healthcheck():
