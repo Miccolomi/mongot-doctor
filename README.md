@@ -80,17 +80,6 @@ python3 mongot_monitor.py \
   --port 5051
 ```
 
-### Avvio In-Cluster (come Pod K8s)
-
-```bash
-python3 mongot_monitor.py \
-  --uri "mongodb://..." \
-  --namespace mongodb \
-  --in-cluster
-```
-
-> Il ServiceAccount del pod dovrà avere un Role con permessi di lettura su `pods`, `pods/log`, `events`, `services`, `persistentvolumeclaims`, CRD `mongodbsearch` e `deployments`.
-
 ### Con Basic Auth (protezione accesso)
 
 ```bash
