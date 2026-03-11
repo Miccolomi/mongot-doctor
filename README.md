@@ -263,8 +263,3 @@ kubectl port-forward svc/mongot-monitor 5050:5050 -n mongodb
 | `/api/logs/<ns>/<pod>` | GET | Ultimi 50 log del pod |
 | `/api/download_logs/<ns>/<pod>` | GET | Download log (parametri `?time=1h&level=error`) |
 
----
-
-## 📄 Licenza
-
-MIT
