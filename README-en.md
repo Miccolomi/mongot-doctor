@@ -199,11 +199,38 @@ Update the `image:` field in `k8s/deployment.yaml` accordingly.
 
 ### 2. Configure the MongoDB URI
 
-Edit `k8s/secret.yaml` with your connection string:
+The connection to **mongod** is required for oplog, index, and compliance checks (skipAuth, TLS mode).
+**mongot** is always discovered automatically via Kubernetes — no URI needed for it.
+
+Edit `k8s/secret.yaml` based on where your mongod is running:
+
+#### Scenario A — mongod inside the cluster (installed with MCK)
+
+Use the internal K8s DNS name of the replica set headless service:
+
+```bash
+# Find the service name
+kubectl get svc -n <namespace>
+# Look for a ClusterIP service on port 27017 (e.g. my-replica-set-svc)
+```
 
 ```yaml
 stringData:
-  MONGODB_URI: "mongodb://user:password@host1:port1,host2:port2/admin?replicaSet=RS&tls=true&tlsAllowInvalidCertificates=true&authSource=admin"
+  MONGODB_URI: "mongodb://USER:PASSWORD@<replica-set-name>-svc.<namespace>.svc.cluster.local/admin?replicaSet=<RS-name>&tls=true&tlsAllowInvalidCertificates=true&authSource=admin"
+```
+
+#### Scenario B — mongod outside the cluster (Atlas, on-prem, external VM)
+
+Use the external connection string provided by your MongoDB deployment:
+
+```yaml
+# Atlas (SRV):
+stringData:
+  MONGODB_URI: "mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/admin?authSource=admin"
+
+# Replica set with DNS-resolvable hostnames:
+stringData:
+  MONGODB_URI: "mongodb://USER:PASSWORD@host1:27017,host2:27017,host3:27017/admin?replicaSet=RS&tls=true&authSource=admin"
 ```
 
 > If your cluster requires SCRAM-SHA-256, append `&authMechanism=SCRAM-SHA-256` to the URI.
@@ -245,19 +272,7 @@ http://<NODE_IP>:<NODE_PORT>
 
 ### Note for local development (Docker Desktop)
 
-If your MongoDB nodes have hostnames defined in `/etc/hosts` on the host machine (e.g. `work0.mongodb.local → 127.0.0.1`), these will not resolve from inside the pod. Add a `hostAliases` block in `deployment.yaml` to map them to the Docker Desktop host IP (`192.168.65.254`):
-
-```yaml
-spec:
-  hostAliases:
-    - ip: "192.168.65.254"
-      hostnames:
-        - "work0.mongodb.local"
-        - "work1.mongodb.local"
-        - "work2.mongodb.local"
-```
-
-This is not required in production environments where MongoDB hostnames are DNS-resolvable from the cluster.
+If you are testing on Docker Desktop with MongoDB already installed in the cluster via MCK, the internal service DNS (`my-replica-set-svc.mongodb.svc.cluster.local`) is directly reachable from the pod — no additional configuration needed. Avoid using hostnames defined in `/etc/hosts` on the host machine (e.g. `work0.mongodb.local`): they are not resolvable from inside the pod.
 
 ### Manifest overview
 

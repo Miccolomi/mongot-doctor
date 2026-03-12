@@ -17,16 +17,6 @@ spec:
     spec:
       serviceAccountName: mongot-monitor
 
-      # Map MongoDB hostnames that resolve on the host (127.0.0.1 in /etc/hosts)
-      # to host.docker.internal (192.168.65.254) so they are reachable from the pod.
-      # Remove or update this block if your MongoDB is on a real DNS-resolvable host.
-      hostAliases:
-        - ip: "192.168.65.254"
-          hostnames:
-            - "work0.mongodb.local"
-            - "work1.mongodb.local"
-            - "work2.mongodb.local"
-
       containers:
         - name: mongot-monitor
           image: mongot-monitor:latest   # replace with your registry/image:tag
