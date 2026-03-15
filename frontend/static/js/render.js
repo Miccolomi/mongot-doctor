@@ -121,10 +121,18 @@ function render(d) {
     // Search Commands
     h+=`<div style="background:#0a0d14;border-radius:8px;padding:12px;border:1px solid #1a1f2e">`;
     h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#00b0ff;margin-bottom:8px">🔎 Search Commands</div>`;
-    h+=row('$search latency',`<span class="${sc.search_latency_sec>0.5?'red':sc.search_latency_sec>0.1?'ylw':'grn'}">${fMs(sc.search_latency_sec)}</span>`);
+    // QPS prominently
+    const sqps=sc.search_qps||0, vsqps=sc.vectorsearch_qps||0;
+    h+=`<div style="display:flex;gap:8px;margin-bottom:8px">`;
+    h+=mgItem(sqps.toFixed(2)+' /s','$search QPS',sqps>0?'#00e676':'#6b7394');
+    h+=mgItem(vsqps.toFixed(2)+' /s','$vecSearch QPS',vsqps>0?'#00e5ff':'#6b7394');
+    h+=`</div>`;
+    h+=row('$search avg lat.',`<span class="${sc.search_avg_latency_sec>0.5?'red':sc.search_avg_latency_sec>0.1?'ylw':'grn'}">${fMs(sc.search_avg_latency_sec)}</span>`);
+    h+=row('$search max lat.',`<span class="${sc.search_latency_sec>0.5?'red':sc.search_latency_sec>0.1?'ylw':'grn'}">${fMs(sc.search_latency_sec)}</span>`);
     h+=row('$search failures',`<span class="${sc.search_failures>0?'red':'grn'}">${fN(sc.search_failures)}</span>`);
-    h+=row('$vectorSearch lat.',`<span class="${sc.vectorsearch_latency_sec>1?'red':sc.vectorsearch_latency_sec>0.3?'ylw':'grn'}">${fMs(sc.vectorsearch_latency_sec)}</span>`);
-    h+=row('$vectorSearch fail',`<span class="${sc.vectorsearch_failures>0?'red':'grn'}">${fN(sc.vectorsearch_failures)}</span>`);
+    h+=row('$vecSearch avg lat.',`<span class="${sc.vectorsearch_avg_latency_sec>1?'red':sc.vectorsearch_avg_latency_sec>0.3?'ylw':'grn'}">${fMs(sc.vectorsearch_avg_latency_sec)}</span>`);
+    h+=row('$vecSearch max lat.',`<span class="${sc.vectorsearch_latency_sec>1?'red':sc.vectorsearch_latency_sec>0.3?'ylw':'grn'}">${fMs(sc.vectorsearch_latency_sec)}</span>`);
+    h+=row('$vecSearch fail',`<span class="${sc.vectorsearch_failures>0?'red':'grn'}">${fN(sc.vectorsearch_failures)}</span>`);
     h+=row('getMores latency',`<span class="blu">${fMs(sc.getmores_latency_sec)}</span>`);
     h+=row('manageIndex lat.',`<span class="blu">${fMs(sc.manage_index_latency_sec)}</span>`);
     h+=`</div>`;

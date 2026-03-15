@@ -6,9 +6,46 @@ Questo tool va oltre le classiche metriche Prometheus: incrocia in tempo reale i
 
 ---
 
+## 🆕 Ultimi Aggiornamenti
+
+### Milestone 1 — Discovery robusta dei pod mongot
+La discovery dei pod `mongot` ora usa una gerarchia a 4 livelli, resistente a upgrade rolling, scaling e variazioni di naming:
+
+1. **Label ufficiale MCK** `app.kubernetes.io/component=search` — il metodo più affidabile
+2. **Container name** `mongot` — fallback stabile tra versioni MCK
+3. **Container image** — contiene `mongodb-enterprise-search` o `mongot`
+4. **Nome pod (ultima spiaggia)** — euristica su `mongot` nel nome, esclude `mongod` e `monitor`
+
+Il pod del monitor stesso viene sempre escluso via label `app: mongot-monitor`.
+
+### Milestone 2 — Index Build ETA in tempo reale
+Durante un Initial Sync o build massivo di un indice, la dashboard mostra un pannello dedicato **"⚙️ Index Build in Progress"** con:
+
+- **Barra di avanzamento animata** (colore: verde > 75%, arancione < 75%, rosso se stalled)
+- **Contatore documenti** processati / totali con percentuale
+- **Velocità** in docs/sec (calcolata tramite delta tra cicli di raccolta)
+- **ETA dinamica** (`fEta()` — formato h/m/s) oppure warning **"INDEX BUILD STALLED"** se la velocità scende sotto 100 docs/s per almeno 30 secondi
+
+Il pannello è visibile solo quando è attivo un Initial Sync (`initial_sync_in_progress > 0`).
+
+### Milestone 3 — Search Query Rate e Latenza in tempo reale
+Il pannello **"🔎 Search Commands"** ora mostra metriche di throughput computate tramite delta tra cicli successivi di Prometheus:
+
+- **`$search QPS`** e **`$vectorSearch QPS`** — richieste al secondo, mostrate in evidenza
+- **Latenza media** (`avg`) — calcolata come `Δsomma_latenza / Δconteggio` (latenza reale per query)
+- **Latenza massima** (`max`) — picco storico dal counter Prometheus
+- **Failure counters** per `$search` e `$vectorSearch`
+
+I dati di QPS si attivano al secondo ciclo di raccolta (serve un delta temporale). Prima di allora i valori mostrano `0.00 /s` in grigio.
+
+---
+
 ## ✨ Caratteristiche Principali
 
 - 🧠 **SRE Advisor Backend**: 12 check automatici sulle Best Practice MongoDB Search (spazio disco 200%, consolidamento indici, I/O, CPU/QPS, OOMKilled, CRD status, storage class, versioning, finestra oplog predittiva, autenticazione mongod↔mongot, TLS mode). La logica è in Python, completamente testabile.
+- 📡 **Search QPS & Latenza Real-Time**: Throughput (`$search`, `$vectorSearch`) e latenza media/massima calcolati in tempo reale dal Background Collector tramite delta di counter Prometheus.
+- ⏳ **Index Build ETA**: Pannello live durante initial sync con barra di avanzamento animata, docs/s e countdown ETA. Rileva automaticamente uno stallo del build.
+- 🔍 **Pod Discovery Robusta**: Gerarchia a 4 livelli (label MCK → container name → image → nome pod) per scoperta affidabile in ogni scenario MCK.
 - 🌊 **Atlas Search Sync Pipeline Analyzer**: Visualizza e monitora in tempo reale l'intero flusso dati (`DB → Change Stream → RAM → Lucene`), calcolando il Lag effettivo tra MongoDB e mongot.
 - ⏱️ **SRE Predittivo (Oplog Window)**: Monitora la finestra dell'Oplog per individuare ritardi critici nella replication di `mongot` e prevenire `Initial Sync` catastrofici prima che accadano.
 - 🩺 **Diagnostica K8s Universale**: Auto-scopre installazioni Helm, verifica versioni Kubernetes e Operator MCK, mappa dinamicamente PVC, Servizi e Pod.

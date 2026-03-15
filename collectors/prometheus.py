@@ -67,12 +67,25 @@ def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: i
 
     result["categories"] = {
         "search_commands": {
+            # Latency (max) — existing
             "search_latency_sec":          g("mongot_command_searchCommandTotalLatency_seconds_max"),
-            "search_failures":             g("mongot_command_searchCommandFailure_total"),
             "vectorsearch_latency_sec":    g("mongot_command_vectorSearchCommandTotalLatency_seconds_max"),
-            "vectorsearch_failures":       g("mongot_command_vectorSearchCommandFailure_total"),
             "getmores_latency_sec":        g("mongot_command_getMoresCommandTotalLatency_seconds_max"),
             "manage_index_latency_sec":    g("mongot_command_manageSearchIndexCommandTotalLatency_seconds_max"),
+            # Counters — used to compute QPS and avg latency via delta
+            "search_total":                g("mongot_command_searchCommandTotalLatency_seconds_count"),
+            "search_latency_sum":          g("mongot_command_searchCommandTotalLatency_seconds_sum"),
+            "vectorsearch_total":          g("mongot_command_vectorSearchCommandTotalLatency_seconds_count"),
+            "vectorsearch_latency_sum":    g("mongot_command_vectorSearchCommandTotalLatency_seconds_sum"),
+            "getmores_total":              g("mongot_command_getMoresCommandTotalLatency_seconds_count"),
+            # Failures (cumulative)
+            "search_failures":             g("mongot_command_searchCommandFailure_total"),
+            "vectorsearch_failures":       g("mongot_command_vectorSearchCommandFailure_total"),
+            # Rates — computed by background collector, seeded to 0 here
+            "search_qps":           0.0,
+            "search_avg_latency_sec": 0.0,
+            "vectorsearch_qps":     0.0,
+            "vectorsearch_avg_latency_sec": 0.0,
         },
         "jvm": {
             "heap_used_bytes":      g("mongot_jvm_memory_used_bytes"),

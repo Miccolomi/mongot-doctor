@@ -6,9 +6,46 @@ This tool goes beyond standard Prometheus metrics: it correlates real-time datab
 
 ---
 
+## 🆕 What's New
+
+### Milestone 1 — Robust mongot pod discovery
+Pod discovery now uses a 4-level hierarchy, resilient to rolling upgrades, scaling events, and naming variations:
+
+1. **Official MCK label** `app.kubernetes.io/component=search` — the most reliable method
+2. **Container name** `mongot` — stable fallback across MCK versions
+3. **Container image** — contains `mongodb-enterprise-search` or `mongot`
+4. **Pod name (last resort)** — heuristic on `mongot` in the name, excluding `mongod` and `monitor`
+
+The monitor pod itself is always excluded via the `app: mongot-monitor` label.
+
+### Milestone 2 — Real-time Index Build ETA
+During an Initial Sync or a bulk index build, the dashboard shows a dedicated **"⚙️ Index Build in Progress"** panel with:
+
+- **Animated progress bar** (color: green > 75%, orange < 75%, red if stalled)
+- **Document counter** — processed / total with percentage
+- **Speed** in docs/sec (computed as a delta between collection cycles)
+- **Dynamic ETA** (`fEta()` — h/m/s format) or **"INDEX BUILD STALLED"** warning if the rate drops below 100 docs/s for at least 30 seconds
+
+The panel is only visible while an Initial Sync is active (`initial_sync_in_progress > 0`).
+
+### Milestone 3 — Search Query Rate & Latency in real time
+The **"🔎 Search Commands"** panel now shows throughput metrics computed as deltas between successive Prometheus scrape cycles:
+
+- **`$search QPS`** and **`$vectorSearch QPS`** — requests per second, displayed prominently
+- **Average latency** (`avg`) — computed as `Δlatency_sum / Δcount` (actual per-query latency)
+- **Max latency** (`max`) — historical peak from the Prometheus counter
+- **Failure counters** for `$search` and `$vectorSearch`
+
+QPS data activates from the second collection cycle onward (a time delta is required). Until then, values show `0.00 /s` in grey.
+
+---
+
 ## ✨ Key Features
 
 - 🧠 **SRE Advisor Backend**: 12 automated Best Practice checks for MongoDB Search (200% disk rule, index consolidation, I/O bottleneck, CPU/QPS, OOMKilled, CRD status, storage class, versioning, predictive oplog window, mongod↔mongot authentication, TLS mode). Logic lives in Python — fully testable.
+- 📡 **Search QPS & Real-Time Latency**: Throughput (`$search`, `$vectorSearch`) and average/max latency computed in real time by the Background Collector via Prometheus counter deltas.
+- ⏳ **Index Build ETA**: Live panel during initial sync with animated progress bar, docs/sec speed, and ETA countdown. Automatically detects a stalled build.
+- 🔍 **Robust Pod Discovery**: 4-level hierarchy (MCK label → container name → image → pod name) for reliable discovery in every MCK scenario.
 - 🌊 **Atlas Search Sync Pipeline Analyzer**: End-to-end real-time visualization of the active data pipeline (`DB → Change Stream → RAM → Lucene`), computing actual replication lag between MongoDB and mongot.
 - ⏱️ **Predictive SRE (Oplog Window)**: Monitors the MongoDB Oplog window to detect critical `mongot` replication lag and prevent catastrophic forced `Initial Sync` before it happens.
 - 🩺 **Universal K8s Diagnostics**: Auto-discovers Helm releases, tracks Kubernetes and MCK Operator versions, dynamically maps PVCs, Services, and Pods.

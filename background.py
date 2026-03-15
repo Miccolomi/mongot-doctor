@@ -119,6 +119,23 @@ class BackgroundCollector:
                 if dt > 0 and du >= 0:
                     pod_prom["categories"]["indexing"]["steady_applicable_updates_sec"] = round(du / dt, 1)
 
+                # ── Search QPS + avg latency ───────────────────────────────────
+                sc = pod_prom["categories"].setdefault("search_commands", {})
+                if dt > 0:
+                    d_search  = sc.get("search_total", 0) - last_s.get("search_total", sc.get("search_total", 0))
+                    d_vs      = sc.get("vectorsearch_total", 0) - last_s.get("vectorsearch_total", sc.get("vectorsearch_total", 0))
+                    d_sl_sum  = sc.get("search_latency_sum", 0) - last_s.get("search_latency_sum", sc.get("search_latency_sum", 0))
+                    d_vsl_sum = sc.get("vectorsearch_latency_sum", 0) - last_s.get("vectorsearch_latency_sum", sc.get("vectorsearch_latency_sum", 0))
+
+                    if d_search >= 0:
+                        sc["search_qps"] = round(d_search / dt, 2)
+                        if d_search > 0 and d_sl_sum >= 0:
+                            sc["search_avg_latency_sec"] = round(d_sl_sum / d_search, 4)
+                    if d_vs >= 0:
+                        sc["vectorsearch_qps"] = round(d_vs / dt, 2)
+                        if d_vs > 0 and d_vsl_sum >= 0:
+                            sc["vectorsearch_avg_latency_sec"] = round(d_vsl_sum / d_vs, 4)
+
             # ── Index Build ETA ────────────────────────────────────────────────
             idx = pod_prom["categories"]["indexing"]
             processed = idx.get("build_docs_processed", 0) or 0
@@ -146,10 +163,15 @@ class BackgroundCollector:
                 }
 
             idx["eta_info"] = eta_info
+            sc_snap = pod_prom["categories"].get("search_commands", {})
             new_scrape[pod_key] = {
                 "time": now,
                 "applicable_updates": curr_updates,
                 "build_docs_processed": processed,
+                "search_total":           sc_snap.get("search_total", 0),
+                "search_latency_sum":     sc_snap.get("search_latency_sum", 0),
+                "vectorsearch_total":     sc_snap.get("vectorsearch_total", 0),
+                "vectorsearch_latency_sum": sc_snap.get("vectorsearch_latency_sum", 0),
             }
             prom_metrics[pod_key] = pod_prom
 
