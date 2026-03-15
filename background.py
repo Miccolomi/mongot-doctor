@@ -136,6 +136,13 @@ class BackgroundCollector:
                         if d_vs > 0 and d_vsl_sum >= 0:
                             sc["vectorsearch_avg_latency_sec"] = round(d_vsl_sum / d_vs, 4)
 
+                    # ── Scan ratio (query efficiency) ──────────────────────────
+                    d_cands = sc.get("candidates_examined", 0) - last_s.get("candidates_examined", sc.get("candidates_examined", 0))
+                    d_res   = sc.get("results_returned", 0)   - last_s.get("results_returned",   sc.get("results_returned", 0))
+                    if d_cands >= 0:
+                        sc["scan_ratio"] = round(d_cands / max(d_res, 1), 1)
+                        sc["zero_results_with_candidates"] = (d_res == 0 and d_cands > 0)
+
             # ── Index Build ETA ────────────────────────────────────────────────
             idx = pod_prom["categories"]["indexing"]
             processed = idx.get("build_docs_processed", 0) or 0
@@ -168,10 +175,12 @@ class BackgroundCollector:
                 "time": now,
                 "applicable_updates": curr_updates,
                 "build_docs_processed": processed,
-                "search_total":           sc_snap.get("search_total", 0),
-                "search_latency_sum":     sc_snap.get("search_latency_sum", 0),
-                "vectorsearch_total":     sc_snap.get("vectorsearch_total", 0),
+                "search_total":             sc_snap.get("search_total", 0),
+                "search_latency_sum":       sc_snap.get("search_latency_sum", 0),
+                "vectorsearch_total":       sc_snap.get("vectorsearch_total", 0),
                 "vectorsearch_latency_sum": sc_snap.get("vectorsearch_latency_sum", 0),
+                "candidates_examined":      sc_snap.get("candidates_examined", 0),
+                "results_returned":         sc_snap.get("results_returned", 0),
             }
             prom_metrics[pod_key] = pod_prom
 

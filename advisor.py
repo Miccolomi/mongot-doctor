@@ -348,6 +348,73 @@ def _check_search_tls(server_params: dict) -> Finding | None:
     return None
 
 
+def _check_scan_ratio(pods: list, prom_all: dict) -> Finding | None:
+    """Check query candidate scan ratio — proxy for search index efficiency."""
+    worst_ratio = 0.0
+    worst_pod = ""
+    zero_results_pods = []
+
+    for p in pods:
+        sc = (prom_all.get(p["name"]) or {}).get("categories", {}).get("search_commands", {})
+        ratio = sc.get("scan_ratio", 0.0)
+        zero_anti = sc.get("zero_results_with_candidates", False)
+
+        if zero_anti:
+            zero_results_pods.append(p["name"])
+
+        if ratio > worst_ratio:
+            worst_ratio = ratio
+            worst_pod = p["name"]
+
+    # Anti-pattern takes priority: candidates scanned but zero results returned
+    if zero_results_pods:
+        pods_str = ", ".join(zero_results_pods)
+        return _finding(
+            "scan_ratio",
+            "Search Efficiency (Scan Ratio)",
+            "warn",
+            f"Zero results returned while candidates were examined on: {pods_str}. "
+            "Possible causes: $match post-search filter too restrictive, scoring threshold too high, or pipeline misconfiguration.",
+            "A high scan ratio or zero results with candidates examined indicates an inefficient query or misconfigured index. "
+            "Review the search query pipeline and index field mappings.",
+        )
+
+    if worst_ratio == 0.0:
+        return None  # No data yet (first cycle or metric not exposed by this mongot version)
+
+    if worst_ratio > 500:
+        return _finding(
+            "scan_ratio",
+            "Search Efficiency (Scan Ratio)",
+            "crit",
+            f"Scan ratio {worst_ratio:.0f}:1 on pod {worst_pod}. "
+            "mongot is scanning an extreme number of candidates per result — index or query is seriously problematic. "
+            "This will degrade severely as the dataset grows.",
+            "Scan ratio = candidates_examined / results_returned. "
+            "< 5 is excellent, 5–50 is normal, 50–500 is inefficient, > 500 is critical. "
+            "Review index analyzer, field mappings, and query specificity.",
+        )
+    if worst_ratio > 50:
+        return _finding(
+            "scan_ratio",
+            "Search Efficiency (Scan Ratio)",
+            "warn",
+            f"Scan ratio {worst_ratio:.0f}:1 on pod {worst_pod} — query is inefficient. "
+            "The index must examine many candidates to produce each result. "
+            "Latency will worsen as the dataset grows even if it appears acceptable now.",
+            "Scan ratio = candidates_examined / results_returned. "
+            "< 5 is excellent, 5–50 is normal, > 50 is inefficient. "
+            "Review analyzer configuration and query specificity.",
+        )
+    return _finding(
+        "scan_ratio",
+        "Search Efficiency (Scan Ratio)",
+        "pass",
+        f"Scan ratio {worst_ratio:.1f}:1 — index is selective and queries are efficient.",
+        "Scan ratio = candidates_examined / results_returned. < 5 is excellent, 5–50 is normal.",
+    )
+
+
 def _check_oplog_window(oplog_info: dict, pods: list, prom_all: dict) -> Finding | None:
     if not oplog_info or not oplog_info.get("head_timestamp"):
         return None
@@ -418,6 +485,7 @@ def run_advisor(snapshot: Snapshot) -> list[Finding]:
         _check_skip_auth(server_params),
         _check_search_tls(server_params),
         _check_oplog_window(oplog_info, pods, prom_all),
+        _check_scan_ratio(pods, prom_all),
     ):
         if optional:
             findings.append(optional)

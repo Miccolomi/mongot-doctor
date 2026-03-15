@@ -135,6 +135,18 @@ function render(d) {
     h+=row('$vecSearch fail',`<span class="${sc.vectorsearch_failures>0?'red':'grn'}">${fN(sc.vectorsearch_failures)}</span>`);
     h+=row('getMores latency',`<span class="blu">${fMs(sc.getmores_latency_sec)}</span>`);
     h+=row('manageIndex lat.',`<span class="blu">${fMs(sc.manage_index_latency_sec)}</span>`);
+    // Search Efficiency (scan ratio)
+    const sr = sc.scan_ratio != null ? sc.scan_ratio : null;
+    if (sr != null && sr > 0) {
+        const srColor = sr > 500 ? '#ff1744' : sr > 50 ? '#ffab00' : sr > 5 ? '#00e676' : '#00e676';
+        const srLabel = sr > 500 ? 'CRITICAL' : sr > 50 ? 'Inefficient' : sr > 5 ? 'Normal' : 'Excellent';
+        h += `<div style="border-top:1px solid #1a1f2e;margin:6px 0 4px"></div>`;
+        h += `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6b7394;margin-bottom:4px">Index Efficiency</div>`;
+        h += row('Scan ratio', `<span style="color:${srColor};font-weight:700">${sr.toFixed(1)}:1</span> <span style="color:${srColor};font-size:10px">(${srLabel})</span>`);
+        if (sc.zero_results_with_candidates) {
+            h += `<div style="font-size:10px;color:#ffab00;margin-top:4px">⚠ Zero results with candidates examined — check post-search $match or scoring threshold</div>`;
+        }
+    }
     h+=`</div>`;
 
     // JVM Heap
