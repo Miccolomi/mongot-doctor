@@ -17,12 +17,34 @@
     </div>
   </div>
   <div class="hdr-r">
+    <button onclick="openReportModal()" style="padding:6px 14px;font-size:12px;font-weight:700;background:#1a2a4a;color:#00b0ff;border:1px solid #00b0ff55;border-radius:6px;cursor:pointer;">📋 Report</button>
     <select id="rr" onchange="setR()">
       <option value="3">3s</option>
       <option value="5" selected>5s</option>
       <option value="15">15s</option>
     </select>
     <span id="pill" class="pill p-ok"><span class="pill-d"></span>OK</span>
+  </div>
+</div>
+
+<!-- Report Modal -->
+<div id="report-modal" style="display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#0d1117;border:1px solid #1a1f2e;border-radius:12px;width:min(860px,95vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 64px #00000088;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1a1f2e;flex-shrink:0">
+      <div style="font-size:13px;font-weight:700;color:#c9d1e0;letter-spacing:1px">📋 STATUS REPORT</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="fmt-text"     onclick="switchFmt('text')"     style="padding:5px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:1px solid #00b0ff;background:#00b0ff22;color:#00b0ff">Text</button>
+        <button id="fmt-markdown" onclick="switchFmt('markdown')" style="padding:5px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:1px solid #1a1f2e;background:transparent;color:#6b7394">Markdown</button>
+        <button id="fmt-json"     onclick="switchFmt('json')"     style="padding:5px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:1px solid #1a1f2e;background:transparent;color:#6b7394">JSON</button>
+        <div style="width:1px;height:20px;background:#1a1f2e;margin:0 4px"></div>
+        <button onclick="copyReport()"    style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:1px solid #00e67644;background:#00e67611;color:#00e676">⎘ Copy</button>
+        <button onclick="downloadReport()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:1px solid #7c4dff44;background:#7c4dff11;color:#b388ff">⬇ Download</button>
+        <button onclick="closeReportModal()" style="padding:5px 12px;font-size:13px;border-radius:5px;cursor:pointer;border:1px solid #1a1f2e;background:transparent;color:#6b7394">✕</button>
+      </div>
+    </div>
+    <div style="padding:16px 20px;overflow-y:auto;flex:1">
+      <pre id="report-content" style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.65;color:#c9d1e0;white-space:pre-wrap;word-break:break-word">⏳ Generating report…</pre>
+    </div>
   </div>
 </div>
 
@@ -37,6 +59,7 @@
 <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pipeline.js') }}"></script>
 <script src="{{ url_for('static', filename='js/index_inspector.js') }}"></script>
+<script src="{{ url_for('static', filename='js/report.js') }}"></script>
 <script src="{{ url_for('static', filename='js/render.js') }}"></script>
 
 </body>

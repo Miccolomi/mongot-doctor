@@ -193,6 +193,10 @@ def main():
     parser.add_argument("--diagnose", action="store_true",
                         help="Run a single diagnostic cycle, print report, and exit. "
                              "Exit code: 0=healthy, 1=degraded, 2=critical")
+    parser.add_argument("--report", action="store_true",
+                        help="Generate a full status report and print it. Use with --format.")
+    parser.add_argument("--format", choices=["text", "markdown", "json"], default="text",
+                        help="Report output format: text (default), markdown, json")
     parser.add_argument("--inspect-indexes", action="store_true",
                         help="Inspect all Search index definitions and print a quality report. "
                              "Exit code: 0=healthy, 1=degraded, 2=critical")
@@ -205,6 +209,23 @@ def main():
 
     if args.uri:
         init_mongo(args.uri)
+
+    if args.report:
+        import sys, json as _json
+        from report import build_text, build_markdown, build_json
+        collector = BackgroundCollector(interval=args.interval)
+        log.info("Running single collection cycle for report...")
+        collector._collect()
+        with state.cache_lock:
+            data     = state.metrics_cache.get("data") or {}
+            findings = state.metrics_cache.get("advisor") or []
+        if args.format == "json":
+            print(_json.dumps(build_json(data, findings), indent=2, default=str))
+        elif args.format == "markdown":
+            print(build_markdown(data, findings))
+        else:
+            print(build_text(data, findings))
+        sys.exit(0)
 
     if args.inspect_indexes:
         import sys

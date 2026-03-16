@@ -193,6 +193,36 @@ def analyze_logs(namespace, pod_name):
     return jsonify(result)
 
 
+# ── Report ────────────────────────────────────────────────────────────────────
+
+@api_bp.route("/api/report")
+def report():
+    import json as _json
+    from report import build_text, build_markdown, build_json
+
+    fmt = request.args.get("format", "text").lower()
+    if fmt not in ("text", "markdown", "json"):
+        return jsonify({"error": "Invalid format. Use: text, markdown, json"}), 400
+
+    with state.cache_lock:
+        data     = state.metrics_cache.get("data")
+        findings = state.metrics_cache.get("advisor") or []
+
+    if data is None:
+        return jsonify({"error": "Collector starting, no data yet"}), 503
+
+    if fmt == "json":
+        return jsonify(build_json(data, findings))
+
+    text = build_markdown(data, findings) if fmt == "markdown" else build_text(data, findings)
+    ext  = "md" if fmt == "markdown" else "txt"
+    return Response(
+        text,
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Type": f"text/plain; charset=utf-8"},
+    )
+
+
 # ── Search Index Inspector ────────────────────────────────────────────────────
 
 @api_bp.route("/api/indexes/inspect")
