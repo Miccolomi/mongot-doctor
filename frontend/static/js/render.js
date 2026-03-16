@@ -69,6 +69,9 @@ function render(d) {
   }
   h+=`</div>`;
 
+  // Log Intelligence banner (outside grid, above)
+  setupLogIntelligence(pods);
+
   // 2. DIAGNOSIS PANEL + SRE ADVISOR
   h += buildDiagnosisPanel(d._advisor_findings || []);
   h += buildAdvisorHTML(d._advisor_findings || []);
@@ -102,23 +105,13 @@ function render(d) {
         h += `</div>`;
     }
 
-    // Live Logs + Log Intelligence
+    // Live Logs
     const isLogOpen = openLogs.has(p.name);
-    h += `<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-            <button id="btn-log-${p.name}" class="btn" style="flex:1;min-width:140px" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Hide Logs' : '▶ Show Live Pod Logs'}</button>
-            <button onclick="promptDownloadLog('${p.namespace}', '${p.name}')" class="btn" style="padding:6px 12px;background:#1e3a8a;color:#93c5fd;border-radius:4px;">⬇️ Download</button>
-            <div style="display:flex;gap:4px;align-items:center">
-              <select id="win-${p.name}" style="padding:5px 8px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid #7c4dff44;background:#7c4dff18;color:#b388ff;cursor:pointer;font-family:'JetBrains Mono',monospace;outline:none">
-                <option value="1h">Last 1h</option>
-                <option value="24h" selected>Last 24h</option>
-                <option value="7d">Last 7d</option>
-                <option value="30d">Last 30d</option>
-              </select>
-              <button onclick="runLogAnalysis('${p.namespace}','${p.name}')" class="btn" style="background:#7c4dff18;border:1px solid #7c4dff44;color:#b388ff;white-space:nowrap">🔍 Analyze Logs</button>
-            </div>
+    h += `<div style="display:flex;gap:6px;margin-top:10px">
+            <button id="btn-log-${p.name}" class="btn" style="flex:1" onclick="toggleLogs('${p.namespace}', '${p.name}')">${isLogOpen ? '▼ Hide Logs' : '▶ Show Live Pod Logs'}</button>
+            <button onclick="promptDownloadLog('${p.namespace}', '${p.name}')" class="btn" style="padding:6px 12px;background:#1e3a8a;color:#93c5fd;border-radius:4px;">⬇️ Download Log (.txt)</button>
           </div>`;
     h += `<pre id="log-${p.name}" class="term" style="display:${isLogOpen ? 'block' : 'none'}">${logCache[p.name] || 'Loading...'}</pre>`;
-    h += `<div id="log-analysis-${p.name}" style="display:none;margin-top:10px"></div>`;
 
     if(!prom.available){
       h+=`<div style="margin-top:14px;font-size:11px;color:#ff6b6b">No Prometheus metrics found. Fallbacks (Net, Proxy, Exec) failed.</div></div>`;
@@ -283,6 +276,50 @@ function render(d) {
       else if(!p && op.name === pod) p = op;
       if(p) fetchAndUpdateLog(p.namespace, p.name || p.pod_name);
   });
+}
+
+// ── Log Intelligence Banner ───────────────────────────
+let _logIntelInit = false;
+
+function setupLogIntelligence(pods) {
+    const banner = document.getElementById('log-intelligence-banner');
+    if (!banner || !pods.length) return;
+
+    const podOptions = pods.map(p =>
+        `<option value="${p.name}" data-ns="${p.namespace}">${p.name}</option>`
+    ).join('');
+
+    // Render the banner shell only once
+    if (!_logIntelInit) {
+        banner.innerHTML = `
+          <div style="background:#0d0a1a;border:1px solid #7c4dff44;border-left:4px solid #7c4dff;border-radius:10px;padding:18px 20px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#b388ff;text-transform:uppercase;letter-spacing:1px">🔍 Log Intelligence</div>
+                <div style="font-size:11px;color:#6b7394;margin-top:3px">Automatic pattern detection on mongot JSON logs — errors, failures, connection issues</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select id="li-pod" style="padding:6px 10px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid #7c4dff44;background:#7c4dff11;color:#b388ff;cursor:pointer;font-family:'JetBrains Mono',monospace;outline:none">
+                  ${podOptions}
+                </select>
+                <select id="li-win" style="padding:6px 10px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid #7c4dff44;background:#7c4dff11;color:#b388ff;cursor:pointer;font-family:'JetBrains Mono',monospace;outline:none">
+                  <option value="1h">Last 1h</option>
+                  <option value="24h" selected>Last 24h</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                </select>
+                <button onclick="runLogIntelligence()" style="padding:6px 16px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid #7c4dff88;background:#7c4dff33;color:#b388ff;cursor:pointer;font-family:'JetBrains Mono',monospace;letter-spacing:0.5px">🔄 Analyze</button>
+              </div>
+            </div>
+            <div id="li-results" style="font-size:11px;color:#6b7394">Loading analysis…</div>
+          </div>`;
+        _logIntelInit = true;
+        runLogIntelligence();
+    } else {
+        // Update pod options if pods changed
+        const sel = document.getElementById('li-pod');
+        if (sel && sel.innerHTML !== podOptions) sel.innerHTML = podOptions;
+    }
 }
 
 // ── Health Banner ─────────────────────────────────────

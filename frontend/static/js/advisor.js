@@ -100,6 +100,27 @@ function buildAdvisorHTML(findings) {
 
 // ── Log Intelligence ──────────────────────────────────────────────────────────
 
+async function runLogIntelligence() {
+    const podSel = document.getElementById('li-pod');
+    const winSel = document.getElementById('li-win');
+    const results = document.getElementById('li-results');
+    if (!podSel || !results) return;
+
+    const pod  = podSel.value;
+    const win  = winSel ? winSel.value : '24h';
+    const ns   = podSel.options[podSel.selectedIndex]?.dataset?.ns || 'mongodb';
+
+    results.innerHTML = `<span style="color:#b388ff">⏳ Analyzing logs for <b>${escapeHtml(pod)}</b> (${win})…</span>`;
+
+    try {
+        const r    = await fetch(`/api/logs/analyze/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}?window=${win}`);
+        const data = await r.json();
+        results.innerHTML = buildLogAnalysisHTML(data);
+    } catch(e) {
+        results.innerHTML = `<span style="color:#ff6b6b">Error: ${e.message}</span>`;
+    }
+}
+
 async function runLogAnalysis(namespace, pod) {
     const panel = document.getElementById(`log-analysis-${pod}`);
     const winEl = document.getElementById(`win-${pod}`);
