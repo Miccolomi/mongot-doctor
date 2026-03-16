@@ -1,37 +1,42 @@
 // ── Search Index Inspector Panel ─────────────────────────────────────────────
 
-let _indexInspectorTimer = null;
+let _indexInspectorInit = false;
 
 function setupIndexInspector() {
+    if (_indexInspectorInit) return;
+    _indexInspectorInit = true;
+
     const banner = document.getElementById('index-inspector-banner');
     if (!banner) return;
 
-    _renderIndexInspectorLoading();
-    _fetchIndexInspector();
-
-    if (!_indexInspectorTimer) {
-        _indexInspectorTimer = setInterval(_fetchIndexInspector, 30000);
-    }
+    // Render the shell with the Inspect button — data is only fetched on demand
+    banner.innerHTML = `
+      <div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394;margin-bottom:4px">🔍 Search Index Inspector</div>
+          <div style="font-size:11px;color:#6b7394">Analyze Search index definitions, mapping quality, and health.</div>
+        </div>
+        <button onclick="runIndexInspector()" class="btn" style="padding:7px 18px;font-size:12px;font-weight:700;background:#1a2a4a;color:#00b0ff;border:1px solid #00b0ff44;border-radius:6px;">
+          🔍 Inspect Indexes
+        </button>
+      </div>
+      <div id="ii-results"></div>`;
 }
 
-async function _fetchIndexInspector() {
+async function runIndexInspector() {
+    const results = document.getElementById('ii-results');
+    if (!results) return;
+
+    results.innerHTML = `<div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:14px;margin-bottom:10px;font-size:11px;color:#6b7394">
+      ⏳ Inspecting Search indexes…</div>`;
+
     try {
         const r    = await fetch('/api/indexes/inspect');
         const data = await r.json();
-        const banner = document.getElementById('index-inspector-banner');
-        if (banner) banner.innerHTML = buildIndexInspectorHTML(data);
+        results.innerHTML = buildIndexInspectorHTML(data);
     } catch (e) {
-        const banner = document.getElementById('index-inspector-banner');
-        if (banner) banner.innerHTML = `<div style="color:#ff6b6b;font-size:11px;padding:8px">Index Inspector error: ${escapeHtml(e.message)}</div>`;
+        results.innerHTML = `<div style="color:#ff6b6b;font-size:11px;padding:8px">Index Inspector error: ${escapeHtml(e.message)}</div>`;
     }
-}
-
-function _renderIndexInspectorLoading() {
-    const banner = document.getElementById('index-inspector-banner');
-    if (banner) banner.innerHTML = `
-      <div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:16px;margin-bottom:10px;font-size:11px;color:#6b7394">
-        ⏳ Loading Search Index Inspector…
-      </div>`;
 }
 
 function buildIndexInspectorHTML(data) {
@@ -50,9 +55,8 @@ function buildIndexInspectorHTML(data) {
     const indexes = data.indexes || [];
 
     if (!indexes.length) {
-        return `<div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:16px;margin-bottom:10px;">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394;margin-bottom:4px">🔍 Search Index Inspector</div>
-          <div style="font-size:12px;color:#6b7394">No Search indexes found in this cluster.</div>
+        return `<div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:16px;margin-bottom:10px;font-size:12px;color:#6b7394">
+          No Search indexes found in this cluster.
         </div>`;
     }
 
@@ -64,13 +68,17 @@ function buildIndexInspectorHTML(data) {
     // Header row
     h += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
       <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394;margin-bottom:4px">🔍 Search Index Inspector</div>
         <div style="font-size:15px;font-weight:700;color:${healthColor}">${healthIcon} ${s.total_indexes} index(es) — ${(s.health || 'healthy').toUpperCase()}</div>
       </div>
-      <div style="display:flex;gap:16px;font-size:12px;font-weight:600">
-        <span style="color:#ff1744">✖ ${s.crits} critical</span>
-        <span style="color:#ffab00">⚠ ${s.warns} warnings</span>
-        <span style="color:#00e676">✔ ${s.clean} clean</span>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="display:flex;gap:16px;font-size:12px;font-weight:600">
+          <span style="color:#ff1744">✖ ${s.crits} critical</span>
+          <span style="color:#ffab00">⚠ ${s.warns} warnings</span>
+          <span style="color:#00e676">✔ ${s.clean} clean</span>
+        </div>
+        <button onclick="runIndexInspector()" class="btn" style="padding:5px 14px;font-size:11px;font-weight:700;background:#1a2a4a;color:#00b0ff;border:1px solid #00b0ff44;border-radius:6px;">
+          ↺ Refresh
+        </button>
       </div>
     </div>`;
 
