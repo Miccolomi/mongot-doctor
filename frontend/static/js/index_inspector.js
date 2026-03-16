@@ -9,18 +9,8 @@ function setupIndexInspector() {
     const banner = document.getElementById('index-inspector-banner');
     if (!banner) return;
 
-    // Render the shell with the Inspect button — data is only fetched on demand
-    banner.innerHTML = `
-      <div style="background:#0a0d14;border:1px solid #1a1f2e;border-radius:10px;padding:16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div>
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#6b7394;margin-bottom:4px">🔍 Search Index Inspector</div>
-          <div style="font-size:11px;color:#6b7394">Analyze Search index definitions, mapping quality, and health.</div>
-        </div>
-        <button onclick="runIndexInspector()" class="btn" style="padding:7px 18px;font-size:12px;font-weight:700;background:#1a2a4a;color:#00b0ff;border:1px solid #00b0ff44;border-radius:6px;">
-          🔍 Inspect Indexes
-        </button>
-      </div>
-      <div id="ii-results"></div>`;
+    banner.innerHTML = `<div id="ii-results"></div>`;
+    runIndexInspector();
 }
 
 async function runIndexInspector() {
