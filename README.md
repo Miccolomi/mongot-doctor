@@ -19,6 +19,7 @@ Designed for **SRE**, **MongoDB operators**, and **platform engineers** running 
 - **Built-in SRE Advisor** runs 15 automated checks every collection cycle and ranks findings by severity
 - **Automatic Search Diagnosis** interprets cluster health instantly — Health Summary, Warnings, Recommendations in one panel
 - **Log Intelligence** parses mongot JSON logs automatically and detects errors, failures, and connection issues across configurable time windows
+- **Search Index Inspector** analyzes every Search index definition — mapping quality, field count, dynamic mapping overuse, and index health — with actionable suggestions
 
 No agents to install. No extra infrastructure. Just point it at your cluster and go.
 
@@ -36,6 +37,7 @@ No agents to install. No extra infrastructure. Just point it at your cluster and
 - [🔬 SRE Advisor — Deep Dive](#-sre-advisor--deep-dive)
 - [🩻 Automatic Search Diagnosis](#-automatic-search-diagnosis)
 - [🪵 Log Intelligence](#-log-intelligence)
+- [🔎 Search Index Inspector](#-search-index-inspector)
 
 ---
 
@@ -56,6 +58,7 @@ No agents to install. No extra infrastructure. Just point it at your cluster and
 - 🔒 **Security** — optional Basic Auth, CSP headers, K8s name input validation, configurable CORS
 - 🩻 **Automatic Search Diagnosis** — real-time cluster health panel: Health Summary / Warnings / Recommendations; also available via `/api/diagnose` and `--diagnose` CLI (exit 0/1/2 for CI pipelines)
 - 🪵 **Log Intelligence** — on-demand mongot JSON log analysis with configurable time window (1h / 24h / 7d / 30d); detects errors, OOM, TLS/auth issues, connection failures, index failures, change stream problems
+- 🔎 **Search Index Inspector** — inspects every Search index definition: dynamic mapping detection, field count analysis, BUILDING/FAILED status, over-indexed collections; available via `/api/indexes/inspect` and `--inspect-indexes` CLI
 
 ---
 
@@ -202,6 +205,7 @@ kubectl get svc mongot-monitor -n mongodb
 | `/api/download_logs/<ns>/<pod>` | Download logs (`?time=1h&level=error`) |
 | `/api/diagnose` | Structured diagnosis: health, warnings, recommendations |
 | `/api/logs/analyze/<ns>/<pod>` | Log Intelligence — pattern analysis (`?window=1h\|24h\|7d\|30d`) |
+| `/api/indexes/inspect` | Search Index Inspector — mapping quality and health report |
 
 ---
 
@@ -222,6 +226,8 @@ collectors/
   kubernetes.py          # K8s discovery (pods, CRDs, PVCs, services, helm)
   mongodb.py             # MongoDB collectors (vitals, oplog, indexes)
   prometheus.py          # Prometheus scraper with dual fallback
+  index_inspector.py     # Search Index Inspector (mapping analysis, observation engine)
+  log_analyzer.py        # Log Intelligence (JSON log parsing, 8 pattern matchers)
 
 routes/
   api.py                 # API Blueprint (/metrics, /api/v1/search_metrics, /api/advisor, /api/logs)
@@ -235,8 +241,9 @@ frontend/
     js/
       utils.js           # Utilities (formatBytes, pill, gaugeRing, …)
       logs.js            # Live log management
-      advisor.js         # Advisor renderer
+      advisor.js         # Advisor renderer + Log Intelligence
       pipeline.js        # Sync Pipeline Analyzer
+      index_inspector.js # Search Index Inspector panel
       render.js          # Main renderer + polling
 
 tests/
@@ -474,3 +481,109 @@ GET /api/logs/analyze/<namespace>/<pod>?window=24h
   ]
 }
 ```
+
+---
+
+## 🔎 Search Index Inspector
+
+Many teams create Search indexes without fully understanding their cost: dynamic mapping that indexes every field, stale BUILDING indexes, oversized explicit mappings with dozens of unused fields. mongot-monitor analyzes every index definition automatically and tells you exactly what to fix.
+
+### What it checks
+
+| Check | Severity | Condition |
+|:---|:---|:---|
+| **FAILED state** | 🔴 crit | Index is in `FAILED` status |
+| **Not queryable** | 🔴 crit | `queryable: false` — index not serving queries |
+| **Dynamic mapping** | 🟡 warn | `mappings.dynamic: true` — every document field is indexed |
+| **BUILDING state** | 🟡 warn | Index still building — queries may not return full results |
+| **Empty mapping** | 🟡 warn | `dynamic: false` and zero fields mapped — index returns nothing |
+| **Large static mapping** | 🟡 warn | More than 20 explicit fields — review unused ones |
+| **Over-indexed collection** | 🟡 warn | More than 3 Search indexes on the same collection |
+
+### Why dynamic mapping matters
+
+With `dynamic: true`, mongot indexes **every field** in every document. This is convenient during development, but in production it causes:
+
+- Index size far exceeding the actual data size (observed 10–50x in real clusters)
+- Longer indexing lag — more fields to process per write
+- Higher JVM heap pressure — more Lucene segments to manage
+- Opaque resource consumption — teams don't know what they're actually indexing
+
+The inspector detects this and suggests migrating to a static mapping with only the fields used in search queries.
+
+### API
+
+```bash
+GET /api/indexes/inspect
+```
+
+```json
+{
+  "summary": {
+    "total_indexes": 4,
+    "clean": 2,
+    "warns": 2,
+    "crits": 0,
+    "health": "degraded"
+  },
+  "indexes": [
+    {
+      "ns": "mydb.products",
+      "name": "default",
+      "type": "fullText",
+      "status": "READY",
+      "queryable": true,
+      "num_docs": 125432,
+      "mapping_dynamic": true,
+      "field_count": 0,
+      "observations": [
+        {
+          "level": "warn",
+          "msg": "Dynamic mapping enabled — every document field is indexed",
+          "suggestion": "Restrict mapping to specific fields to reduce index size and improve performance"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### CLI
+
+Run a full inspection from the terminal — no dashboard needed:
+
+```bash
+python3 mongot_monitor.py --uri "mongodb://..." --inspect-indexes
+```
+
+Example output:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  MongoDB Search — Index Inspector
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Collection: mydb.products
+  Index: default  [fullText]  READY
+  Docs: 125,432
+  Mapping: dynamic ⚠
+  ⚠ Dynamic mapping enabled — every document field is indexed
+    → Restrict mapping to specific fields to reduce index size
+
+Collection: mydb.orders
+  Index: default  [fullText]  READY
+  Docs: 89,210
+  Mapping: static (7 fields)
+  ✔ No issues detected
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2 index(es)  |  0 critical, 1 warnings, 1 clean
+  Health: DEGRADED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Exit codes: `0` = healthy, `1` = degraded, `2` = critical.
+
+### Web UI
+
+The inspector panel appears automatically above the main grid, refreshes every 30 seconds, and shows a card per index. If MongoDB is not configured, the panel displays a graceful "not connected" message instead of an error.

@@ -19,6 +19,7 @@ Progettato per **SRE**, **operatori MongoDB** e **platform engineer** che gestis
 - **SRE Advisor integrato** esegue 15 check automatici a ogni ciclo e ordina i risultati per severità
 - **Diagnosi Automatica** interpreta lo stato del cluster istantaneamente — Health Summary, Warning, Raccomandazioni in un unico pannello
 - **Log Intelligence** analizza automaticamente i log JSON di mongot e rileva errori, failure e problemi di connessione su finestre temporali configurabili
+- **Search Index Inspector** analizza ogni definizione di Search index — qualità del mapping, conteggio dei campi, dynamic mapping, stato di salute — con suggerimenti operativi concreti
 
 Nessun agent da installare. Nessuna infrastruttura aggiuntiva. Punta il tool al tuo cluster e vai.
 
@@ -36,6 +37,7 @@ Nessun agent da installare. Nessuna infrastruttura aggiuntiva. Punta il tool al 
 - [🔬 SRE Advisor — Approfondimento](#-sre-advisor--approfondimento)
 - [🩻 Diagnosi Automatica](#-diagnosi-automatica)
 - [🪵 Log Intelligence](#-log-intelligence-1)
+- [🔎 Search Index Inspector](#-search-index-inspector-1)
 
 ---
 
@@ -56,6 +58,7 @@ Nessun agent da installare. Nessuna infrastruttura aggiuntiva. Punta il tool al 
 - 🔒 **Sicurezza** — Basic Auth opzionale, CSP headers, validazione input K8s, CORS configurabile
 - 🩻 **Diagnosi Automatica** — pannello real-time con Health Summary / Warning / Raccomandazioni; disponibile anche via `/api/diagnose` e `--diagnose` CLI (exit 0/1/2 per pipeline CI/CD)
 - 🪵 **Log Intelligence** — analisi on-demand dei log JSON di mongot con finestra temporale configurabile (1h / 24h / 7d / 30d); rileva OOM, errori TLS/auth, failure di connessione, problemi di indicizzazione
+- 🔎 **Search Index Inspector** — analizza ogni definizione di Search index: dynamic mapping, conteggio campi, stato BUILDING/FAILED, collection con troppi indici; disponibile via `/api/indexes/inspect` e `--inspect-indexes` CLI
 
 ---
 
@@ -202,6 +205,7 @@ kubectl get svc mongot-monitor -n mongodb
 | `/api/download_logs/<ns>/<pod>` | Download log (`?time=1h&level=error`) |
 | `/api/diagnose` | Diagnosi strutturata: health, warning, raccomandazioni |
 | `/api/logs/analyze/<ns>/<pod>` | Log Intelligence — analisi pattern (`?window=1h\|24h\|7d\|30d`) |
+| `/api/indexes/inspect` | Search Index Inspector — qualità mapping e stato degli indici |
 
 ---
 
@@ -222,6 +226,8 @@ collectors/
   kubernetes.py          # Discovery K8s (pod, CRD, PVC, services, helm)
   mongodb.py             # Collectors MongoDB (vitals, oplog, indexes)
   prometheus.py          # Prometheus scraper con doppio fallback
+  index_inspector.py     # Search Index Inspector (analisi mapping, motore osservazioni)
+  log_analyzer.py        # Log Intelligence (parsing log JSON, 8 pattern matcher)
 
 routes/
   api.py                 # Blueprint API (/metrics, /api/v1/search_metrics, /api/advisor, /api/logs)
@@ -235,8 +241,9 @@ frontend/
     js/
       utils.js           # Utility (formatBytes, pill, gaugeRing, …)
       logs.js            # Live log management
-      advisor.js         # Advisor renderer
+      advisor.js         # Advisor renderer + Log Intelligence
       pipeline.js        # Sync Pipeline Analyzer
+      index_inspector.js # Pannello Search Index Inspector
       render.js          # Main renderer + polling
 
 tests/
@@ -473,3 +480,110 @@ GET /api/logs/analyze/<namespace>/<pod>?window=24h
     }
   ]
 }
+```
+
+---
+
+## 🔎 Search Index Inspector
+
+Molti team creano Search index senza capirne il costo reale: dynamic mapping che indicizza ogni campo, indici in stato BUILDING dimenticati, mapping espliciti enormi con decine di campi inutilizzati. mongot-monitor analizza ogni definizione di index automaticamente e ti dice esattamente cosa correggere.
+
+### Check eseguiti
+
+| Check | Severità | Condizione |
+|:---|:---|:---|
+| **Stato FAILED** | 🔴 crit | L'indice è in stato `FAILED` |
+| **Non queryable** | 🔴 crit | `queryable: false` — l'indice non serve query |
+| **Dynamic mapping** | 🟡 warn | `mappings.dynamic: true` — ogni campo del documento viene indicizzato |
+| **Stato BUILDING** | 🟡 warn | L'indice è ancora in costruzione — le query potrebbero non restituire risultati completi |
+| **Mapping vuoto** | 🟡 warn | `dynamic: false` e zero campi mappati — l'indice non restituisce nulla |
+| **Mapping statico grande** | 🟡 warn | Più di 20 campi espliciti — verifica quali non sono usati |
+| **Collection over-indexed** | 🟡 warn | Più di 3 Search index sulla stessa collection |
+
+### Perché il dynamic mapping è un problema
+
+Con `dynamic: true`, mongot indicizza **ogni campo** di ogni documento. Comodo in sviluppo, ma in produzione causa:
+
+- Dimensione dell'indice molto superiore ai dati reali (osservato 10–50x in cluster reali)
+- Maggior lag di indicizzazione — più campi da processare per ogni scrittura
+- Maggiore pressione sulla heap JVM — più segmenti Lucene da gestire
+- Consumo di risorse opaco — i team non sanno cosa stanno effettivamente indicizzando
+
+L'inspector rileva questo problema e suggerisce la migrazione a un mapping statico con solo i campi usati nelle query di ricerca.
+
+### API
+
+```bash
+GET /api/indexes/inspect
+```
+
+```json
+{
+  "summary": {
+    "total_indexes": 4,
+    "clean": 2,
+    "warns": 2,
+    "crits": 0,
+    "health": "degraded"
+  },
+  "indexes": [
+    {
+      "ns": "mydb.products",
+      "name": "default",
+      "type": "fullText",
+      "status": "READY",
+      "queryable": true,
+      "num_docs": 125432,
+      "mapping_dynamic": true,
+      "field_count": 0,
+      "observations": [
+        {
+          "level": "warn",
+          "msg": "Dynamic mapping enabled — every document field is indexed",
+          "suggestion": "Restrict mapping to specific fields to reduce index size and improve performance"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### CLI
+
+Esegui un'ispezione completa dal terminale — senza aprire la dashboard:
+
+```bash
+python3 mongot_monitor.py --uri "mongodb://..." --inspect-indexes
+```
+
+Esempio di output:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  MongoDB Search — Index Inspector
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Collection: mydb.products
+  Index: default  [fullText]  READY
+  Docs: 125.432
+  Mapping: dynamic ⚠
+  ⚠ Dynamic mapping abilitato — ogni campo del documento viene indicizzato
+    → Limita il mapping a campi specifici per ridurre dimensione e migliorare le performance
+
+Collection: mydb.orders
+  Index: default  [fullText]  READY
+  Docs: 89.210
+  Mapping: static (7 campi)
+  ✔ Nessun problema rilevato
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2 index  |  0 critical, 1 warning, 1 clean
+  Health: DEGRADED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Exit code: `0` = healthy, `1` = degraded, `2` = critical.
+
+### Interfaccia Web
+
+Il pannello dell'inspector appare automaticamente sopra la griglia principale, si aggiorna ogni 30 secondi e mostra una card per ogni indice. Se MongoDB non è configurato, il pannello mostra un messaggio esplicito invece di un errore.
