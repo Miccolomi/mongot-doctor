@@ -193,6 +193,18 @@ def analyze_logs(namespace, pod_name):
     return jsonify(result)
 
 
+# ── Search Index Inspector ────────────────────────────────────────────────────
+
+@api_bp.route("/api/indexes/inspect")
+def indexes_inspect():
+    if not state.mongo_client:
+        return jsonify({"error": "MongoDB not configured"}), 503
+
+    from collectors.index_inspector import inspect_search_indexes, summarize
+    reports = inspect_search_indexes(state.mongo_client)
+    return jsonify({"summary": summarize(reports), "indexes": reports})
+
+
 # ── Liveness probe ────────────────────────────────────────────────────────────
 
 @api_bp.route("/healthz")

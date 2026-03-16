@@ -116,6 +116,61 @@ def _print_diagnosis(diag: dict) -> None:
     print("\n" + "━" * 54 + "\n")
 
 
+def _print_index_report(reports: list) -> None:
+    """Print a human-readable Search Index Inspector report to stdout."""
+    R  = "\033[0m"
+    GR = "\033[32m"
+    YL = "\033[33m"
+    RD = "\033[31m"
+    CY = "\033[36m"
+
+    print("\n" + "━" * 58)
+    print("  MongoDB Search — Index Inspector")
+    print("━" * 58)
+
+    if not reports:
+        print("\n  No Search indexes found.\n")
+        print("━" * 58 + "\n")
+        return
+
+    for r in reports:
+        status_color = RD if r["status"] == "FAILED" else YL if r["status"] == "BUILDING" else GR
+        obs = r["observations"]
+        has_crit = any(o["level"] == "crit" for o in obs)
+        has_warn = any(o["level"] == "warn" for o in obs)
+        ns_color = RD if has_crit else YL if has_warn else GR
+
+        print(f"\n{CY}Collection:{R} {r['ns']}")
+        print(f"  Index: {r['name']}  [{r['type']}]  {status_color}{r['status']}{R}")
+
+        if r["num_docs"] is not None:
+            print(f"  Docs: {r['num_docs']:,}")
+
+        if r["type"] == "fullText":
+            dynamic_label = f"{YL}dynamic ⚠{R}" if r["mapping_dynamic"] else f"static ({r['field_count']} fields)"
+            print(f"  Mapping: {dynamic_label}")
+        elif r["type"] == "vectorSearch":
+            print(f"  Vector fields: {r['field_count']}")
+
+        if not obs:
+            print(f"  {GR}✔ No issues detected{R}")
+        else:
+            for o in obs:
+                lvl_color = RD if o["level"] == "crit" else YL
+                icon = "✖" if o["level"] == "crit" else "⚠"
+                print(f"  {lvl_color}{icon}{R} {o['msg']}")
+                print(f"    → {o['suggestion']}")
+
+    from collectors.index_inspector import summarize
+    s = summarize(reports)
+    health_color = RD if s["health"] == "critical" else YL if s["health"] == "degraded" else GR
+    print(f"\n{'━' * 58}")
+    print(f"  {s['total_indexes']} index(es)  |  "
+          f"{RD}{s['crits']} critical{R}, {YL}{s['warns']} warnings{R}, {GR}{s['clean']} clean{R}")
+    print(f"  Health: {health_color}{s['health'].upper()}{R}")
+    print("━" * 58 + "\n")
+
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -138,6 +193,9 @@ def main():
     parser.add_argument("--diagnose", action="store_true",
                         help="Run a single diagnostic cycle, print report, and exit. "
                              "Exit code: 0=healthy, 1=degraded, 2=critical")
+    parser.add_argument("--inspect-indexes", action="store_true",
+                        help="Inspect all Search index definitions and print a quality report. "
+                             "Exit code: 0=healthy, 1=degraded, 2=critical")
     args = parser.parse_args()
 
     state.TARGET_NAMESPACE = args.namespace
@@ -147,6 +205,17 @@ def main():
 
     if args.uri:
         init_mongo(args.uri)
+
+    if args.inspect_indexes:
+        import sys
+        from collectors.index_inspector import inspect_search_indexes, summarize
+        if not state.mongo_client:
+            print("✗  MongoDB not configured — pass --uri <connection_string>")
+            sys.exit(2)
+        reports = inspect_search_indexes(state.mongo_client)
+        _print_index_report(reports)
+        s = summarize(reports)
+        sys.exit({"healthy": 0, "degraded": 1, "critical": 2}.get(s["health"], 1))
 
     if args.diagnose:
         import sys

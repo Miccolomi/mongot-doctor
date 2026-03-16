@@ -72,6 +72,9 @@ function render(d) {
   // Log Intelligence banner (outside grid, above)
   setupLogIntelligence(pods);
 
+  // Search Index Inspector banner (outside grid, above)
+  setupIndexInspector();
+
   // 2. DIAGNOSIS PANEL + SRE ADVISOR
   h += buildDiagnosisPanel(d._advisor_findings || []);
   h += buildAdvisorHTML(d._advisor_findings || []);
