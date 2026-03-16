@@ -2,10 +2,10 @@
 
 # 🔬 MongoDB Search Diagnostics
 
-**mongot-monitor is an open-source diagnostic tool for MongoDB Search nodes.**
-It detects performance issues, indexing lag, and configuration problems automatically.
+**Before:** raw Prometheus metrics, scattered kubectl logs, opaque index definitions, no clear picture of what's wrong.
+**After:** one dashboard, one health status, one list of actions.
 
-Designed for **SRE**, **MongoDB operators**, and **platform engineers** running MongoDB Search on Kubernetes.
+mongot-monitor transforms complex MongoDB Search cluster data into instant diagnosis — designed for **SRE**, **MongoDB operators**, and **platform engineers** running MongoDB Search on Kubernetes.
 
 ![Dashboard Screenshot](dashboard.png)
 
