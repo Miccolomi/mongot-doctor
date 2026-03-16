@@ -331,7 +331,6 @@ async function fetchM(){
         }
         if(advisorResp.ok) {
             d._advisor_findings = await advisorResp.json();
-            renderHealthBanner(d._advisor_findings);
         }
         $('err').style.display='none';
         render(d);
