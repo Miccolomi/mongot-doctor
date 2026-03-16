@@ -6,81 +6,48 @@ Questo tool va oltre le classiche metriche Prometheus: incrocia in tempo reale i
 
 ---
 
-## 🆕 Ultimi Aggiornamenti
+## ✨ Caratteristiche Principali
 
-### Milestone 1 — Discovery robusta dei pod mongot
-La discovery dei pod `mongot` ora usa una gerarchia a 4 livelli, resistente a upgrade rolling, scaling e variazioni di naming:
+### 🧠 SRE Advisor (15 check automatici)
 
-1. **Label ufficiale MCK** `app.kubernetes.io/component=search` — il metodo più affidabile
-2. **Container name** `mongot` — fallback stabile tra versioni MCK
-3. **Container image** — contiene `mongodb-enterprise-search` o `mongot`
-4. **Nome pod (ultima spiaggia)** — euristica su `mongot` nel nome, esclude `mongod` e `monitor`
+Ogni ciclo di raccolta esegue in Python una serie di check sullo stato del cluster e dell'indice. I finding vengono ordinati per severità (crit → warn → pass) e serviti via `/api/advisor`.
 
-Il pod del monitor stesso viene sempre escluso via label `app: mongot-monitor`.
+| # | Check | Soglie |
+|:---|:---|:---|
+| 1 | **Spazio Disco (Regola 200%)** | warn se libero < 200% dell'usato; crit se disco ≥ 90% (mongot entra in read-only) |
+| 2 | **Consolidamento Indici** | warn se più di un indice dello stesso tipo sulla stessa collection (fullText + vectorSearch sulla stessa collection è valido: Hybrid Search) |
+| 3 | **Collo di Bottiglia I/O** | crit se disk queue > 10 e lag > 5s contemporaneamente |
+| 4 | **CPU & QPS** | crit se CPU > 80%; warn se QPS > 10 × core |
+| 5 | **Memory Starvation (Page Faults)** | warn > 500/s; crit > 1000/s |
+| 6 | **OOMKilled & MMap Risk** | crit se heap JVM ≥ 90% del limite pod o se OOMKilled rilevato |
+| 7 | **Stato CRD Operator** | crit se la CRD non è in fase `Running` |
+| 8 | **Storage Class Performance** | warn se PVC usa `standard`, `hostpath` o `slow` |
+| 9 | **Versioning Operator** | warn se l'immagine usa il tag `:latest` |
+| 10 | **Oplog Window Predittivo** | warn > 40% consumato; crit > 70% consumato — previene Initial Sync forzati |
+| 11 | **Search Auth** | crit se `skipAuthenticationToSearchIndexManagementServer=true` — mongod↔mongot senza autenticazione |
+| 12 | **Search TLS Mode** | crit se `searchTLSMode=disabled`; warn se `allowTLS`/`preferTLS`; pass se `requireTLS` |
+| 13 | **Search Efficiency (Scan Ratio)** | warn > 50:1; crit > 500:1; warning predittivo se ratio alto + latency bassa (cardinality problem) |
+| 14 | **Vector Search Efficiency** | stessi threshold del scan ratio ma calcolato su `$vectorSearch` separatamente |
+| 15 | **HNSW Visited Nodes** | warn > 1000 nodi/query; crit > 5000 — early warning saturazione CPU su ANN |
 
-### Milestone 2 — Index Build ETA in tempo reale
-Durante un Initial Sync o build massivo di un indice, la dashboard mostra un pannello dedicato **"⚙️ Index Build in Progress"** con:
+### 📡 Search QPS & Latenza Real-Time
 
-- **Barra di avanzamento animata** (colore: verde > 75%, arancione < 75%, rosso se stalled)
-- **Contatore documenti** processati / totali con percentuale
-- **Velocità** in docs/sec (calcolata tramite delta tra cicli di raccolta)
-- **ETA dinamica** (`fEta()` — formato h/m/s) oppure warning **"INDEX BUILD STALLED"** se la velocità scende sotto 100 docs/s per almeno 30 secondi
+Il pannello **🔎 Search Commands** mostra metriche di throughput calcolate tramite delta tra cicli successivi di Prometheus:
 
-Il pannello è visibile solo quando è attivo un Initial Sync (`initial_sync_in_progress > 0`).
+- **`$search QPS`** e **`$vectorSearch QPS`** in evidenza (richieste/secondo)
+- **Latenza media** calcolata come `Δsomma_latenza / Δconteggio` — la latenza reale per singola query, non il picco
+- **Latenza massima** — picco storico dal counter Prometheus
+- **Failure counters** per `$search` e `$vectorSearch`
 
-### Milestone 5 — Vector Search: HNSW Visited Nodes + EMA Scan Ratio
+I valori di QPS si attivano dal secondo ciclo di raccolta (è necessario un delta temporale).
 
-**EMA e guard sul traffico basso (anti-rumore)**
+### 🎯 Search Efficiency — Scan Ratio (EMA-smoothed)
 
-Il scan ratio grezzo è rumoroso con traffico basso: `1 risultato / 500 candidati` da una singola query genera un ratio di 500 che è un falso positivo. Soluzioni implementate:
+`scan_ratio = candidates_examined / results_returned` è il vero indicatore di efficienza di una query search. La latency da sola non basta: una query a 50ms con 200k candidates esaminati diventerà un timeout non appena il dataset cresce.
 
-- **Guard `Δresults < 10`**: se il delta di risultati nell'intervallo è inferiore a 10, l'EMA non viene aggiornata — il valore precedente viene mantenuto
-- **EMA (Exponential Moving Average)** con α = 0.3: `ema = 0.3 × ratio_corrente + 0.7 × ema_precedente`. Questo smorza i picchi isolati e riflette la tendenza sostenuta nel tempo
+Sono calcolati **due ratio separati**: uno per `$search` (`mongot_query_candidates_examined_total` con fallback su `mongot_query_documents_scanned`) e uno dedicato per `$vectorSearch` (`mongot_vector_query_candidates_examined_total`).
 
-**Vector Scan Ratio separato**
-
-Oltre al ratio per `$search`, viene calcolato un ratio dedicato per `$vectorSearch` tramite:
-
-- `mongot_vector_query_candidates_examined_total`
-- `mongot_vector_query_results_returned_total`
-
-Il `vector_scan_ratio` è particolarmente rilevante per individuare degrado ANN (Approximate Nearest Neighbor) causato da `efSearch` troppo alto, scarsa connettività del grafo HNSW, o embedding di dimensioni eccessive.
-
-**HNSW Visited Nodes — la metrica più sottovalutata**
-
-`mongot_vector_search_hnsw_visited_nodes` (fallback: `mongot_vector_search_graph_nodes_visited`) misura quanti nodi del grafo HNSW vengono attraversati per ogni query vectorSearch.
-
-| Visited nodes | Interpretazione |
-|:---|:---|
-| < 200 | Eccellente |
-| 200 – 1000 | Normale |
-| > 1000 | Query costosa |
-| > 5000 | ANN inefficiente — rischio saturazione CPU |
-
-Questa metrica è un **early warning per la saturazione CPU**: il carico aumenta prima ancora che la latency sia visibile. È usata internamente da MongoDB per diagnosticare problemi nei cluster con embedding search di grandi dimensioni.
-
-**Cardinality problem detection (predittivo)**
-
-Se `scan_ratio > 50` ma `latency < 100ms`, l'SRE Advisor emette un warning predittivo:
-> "High scan ratio but low latency — index is non-selective, may degrade as dataset grows"
-
-Questo è un segnale che Ops Manager non fornisce.
-
----
-
-### Milestone 4 — Search Efficiency: Scan Ratio (mongot_query_candidates_examined)
-
-La metrica `mongot_query_candidates_examined` (o `mongot_query_documents_scanned` nelle versioni più recenti di mongot) misura quanti documenti l'indice deve esaminare prima di produrre il risultato finale.
-
-Il rapporto:
-
-```
-scan_ratio = candidates_examined / results_returned
-```
-
-è il vero indicatore di efficienza di una query search. La latency da sola non basta: una query a 50ms con `candidates_examined = 200k` diventerà un timeout non appena il dataset cresce.
-
-**Interpretazione del ratio:**
+Per evitare falsi positivi su traffico basso (es. 1 risultato / 500 candidati da una singola query), il ratio è **EMA-smoothed** (α = 0.3) con guard: se `Δresults < 10` l'EMA non viene aggiornata.
 
 | Ratio | Interpretazione |
 |:---|:---|
@@ -89,48 +56,72 @@ scan_ratio = candidates_examined / results_returned
 | 50 – 500 | Query inefficiente — indice o analyzer da rivedere |
 | > 500 | Critico — indice o query seriamente problematici |
 
-**Anti-pattern rilevato automaticamente:** se `results_returned = 0` ma `candidates_examined > 0`, la dashboard mostra un warning specifico. Cause tipiche: filtro `$match` post-search troppo restrittivo, scoring threshold troppo alto, pipeline mal progettata.
+**Cardinality problem detection (predittivo):** se `scan_ratio > 50` ma `latency < 100ms`, l'Advisor emette un warning — l'indice è poco selettivo ma il dataset è ancora abbastanza piccolo da nascondere il costo. Questo segnale non è fornito da Ops Manager.
 
-**Come funziona nel sistema:**
-- Il collector legge il counter cumulativo da Prometheus (con fallback automatico tra i due nomi di metrica)
-- Il Background Collector calcola `scan_ratio` tramite delta tra cicli successivi, esattamente come per QPS
-- Il pannello "🔎 Search Commands" mostra la sezione **"Index Efficiency"** con ratio colorato e label testuale
-- Il **SRE Advisor** aggiunge automaticamente un finding (pass/warn/crit) — il check si attiva solo se la metrica è esposta dalla versione di mongot installata
+**Anti-pattern zero results:** se `results_returned = 0` ma `candidates_examined > 0`, viene emesso un warning specifico. Cause tipiche: `$match` post-search troppo restrittivo, scoring threshold troppo alto, pipeline mal progettata.
 
-**Correlazione con latenza:** la vera potenza è nella combinazione:
-- Latency alta + scan ratio basso → problema CPU / IO
-- Latency alta + scan ratio alto → problema indice o query
+### 🧬 HNSW Visited Nodes — Early Warning CPU Saturation
 
----
+`mongot_vector_search_hnsw_visited_nodes` (fallback: `mongot_vector_search_graph_nodes_visited`) misura quanti nodi del grafo HNSW vengono attraversati per ogni query `$vectorSearch`. È un **early warning per la saturazione CPU**: il carico cresce prima ancora che la latency diventi visibile.
 
-### Milestone 3 — Search Query Rate e Latenza in tempo reale
-Il pannello **"🔎 Search Commands"** ora mostra metriche di throughput computate tramite delta tra cicli successivi di Prometheus:
+| Visited nodes | Interpretazione |
+|:---|:---|
+| < 200 | Eccellente |
+| 200 – 1000 | Normale |
+| > 1000 | Query costosa — monitorare CPU |
+| > 5000 | ANN inefficiente — saturazione CPU imminente |
 
-- **`$search QPS`** e **`$vectorSearch QPS`** — richieste al secondo, mostrate in evidenza
-- **Latenza media** (`avg`) — calcolata come `Δsomma_latenza / Δconteggio` (latenza reale per query)
-- **Latenza massima** (`max`) — picco storico dal counter Prometheus
-- **Failure counters** per `$search` e `$vectorSearch`
+Valori alti indicano che l'ANN sta degenerando verso brute-force, tipicamente per `efSearch` troppo alto, scarsa connettività del grafo, o embedding di dimensioni eccessive. Il check è opzionale: viene saltato se la metrica non è esposta dalla versione di mongot installata.
 
-I dati di QPS si attivano al secondo ciclo di raccolta (serve un delta temporale). Prima di allora i valori mostrano `0.00 /s` in grigio.
+### ⏳ Index Build ETA
 
----
+Durante un Initial Sync o build massivo di un indice, appare un pannello dedicato **"⚙️ Index Build in Progress"** con:
 
-## ✨ Caratteristiche Principali
+- **Barra di avanzamento animata** — verde > 75%, arancione < 75%, rosso se stalled
+- **Contatore** documenti processati / totali con percentuale
+- **Velocità** in docs/sec (calcolata tramite delta tra cicli di raccolta)
+- **ETA dinamica** in formato h/m/s oppure warning **"INDEX BUILD STALLED"** se la velocità scende sotto 100 docs/s per almeno 30 secondi
 
-- 🧠 **SRE Advisor Backend**: 12 check automatici sulle Best Practice MongoDB Search (spazio disco 200%, consolidamento indici, I/O, CPU/QPS, OOMKilled, CRD status, storage class, versioning, finestra oplog predittiva, autenticazione mongod↔mongot, TLS mode). La logica è in Python, completamente testabile.
-- 📡 **Search QPS & Latenza Real-Time**: Throughput (`$search`, `$vectorSearch`) e latenza media/massima calcolati in tempo reale dal Background Collector tramite delta di counter Prometheus.
-- 🎯 **Search Efficiency (Scan Ratio EMA)**: Calcola in tempo reale il rapporto `candidates_examined / results_returned` (EMA-smoothed, guard anti-rumore su traffico basso) — il vero indicatore di efficienza dell'indice. Ratio separato per `$search` e `$vectorSearch`. Rileva automaticamente l'anti-pattern "zero results con candidates esaminati" e il "cardinality problem" predittivo (ratio alto + latency bassa).
-- 🧬 **HNSW Visited Nodes**: Early warning per saturazione CPU su vectorSearch — misura il numero di nodi attraversati nel grafo HNSW per query. Individua il degrado ANN verso brute-force prima che la latency sia visibile.
-- ⏳ **Index Build ETA**: Pannello live durante initial sync con barra di avanzamento animata, docs/s e countdown ETA. Rileva automaticamente uno stallo del build.
-- 🔍 **Pod Discovery Robusta**: Gerarchia a 4 livelli (label MCK → container name → image → nome pod) per scoperta affidabile in ogni scenario MCK.
-- 🌊 **Atlas Search Sync Pipeline Analyzer**: Visualizza e monitora in tempo reale l'intero flusso dati (`DB → Change Stream → RAM → Lucene`), calcolando il Lag effettivo tra MongoDB e mongot.
-- ⏱️ **SRE Predittivo (Oplog Window)**: Monitora la finestra dell'Oplog per individuare ritardi critici nella replication di `mongot` e prevenire `Initial Sync` catastrofici prima che accadano.
-- 🩺 **Diagnostica K8s Universale**: Auto-scopre installazioni Helm, verifica versioni Kubernetes e Operator MCK, mappa dinamicamente PVC, Servizi e Pod.
-- 📜 **Log Management & Export**: Terminale live integrato per visualizzare i log di mongot e dell'Operator, con download completo filtrato per finestra temporale e severità.
-- 🚨 **Global Error Handling**: Intercetta e mostra ogni errore K8s RBAC, timeout di rete o fallimento di autenticazione MongoDB direttamente nella UI.
-- 📊 **Prometheus Doppio Fallback**: Scarica le metriche dai pod tramite accesso diretto o tunnel via K8s API Server Proxy.
-- ⚡ **Background Collector**: La raccolta dati avviene su un thread daemon separato — `/metrics` risponde sempre in < 1ms dalla cache.
-- 🔒 **Sicurezza**: HTTP Basic Auth opzionale, security headers (CSP, X-Frame-Options, X-Content-Type-Options), validazione input K8s names, CORS configurabile.
+Il pannello è visibile solo quando è attivo un Initial Sync (`initial_sync_in_progress > 0`).
+
+### 🔍 Pod Discovery Robusta (gerarchia a 4 livelli)
+
+La discovery dei pod `mongot` usa una gerarchia resistente a upgrade rolling, scaling e variazioni di naming tra versioni MCK:
+
+1. **Label ufficiale MCK** `app.kubernetes.io/component=search` — il metodo più affidabile
+2. **Container name** `mongot` — fallback stabile tra versioni MCK
+3. **Container image** — contiene `mongodb-enterprise-search` o `mongot`
+4. **Nome pod (ultima spiaggia)** — euristica, esclude `mongod` e `monitor`
+
+Il pod del monitor stesso viene sempre escluso tramite `app: mongot-monitor`.
+
+### 🌊 Atlas Search Sync Pipeline Analyzer
+
+Visualizza in tempo reale l'intero flusso dati `DB → Change Stream → RAM → Lucene`, calcolando il lag effettivo tra MongoDB e mongot e identificando il collo di bottiglia nella pipeline di indicizzazione.
+
+### ⏱️ SRE Predittivo — Oplog Window
+
+Monitora la finestra dell'Oplog e la confronta con il lag corrente di mongot. Se il lag supera il 40% o il 70% della finestra disponibile, emette rispettivamente un warn o un crit per prevenire Initial Sync forzati catastrofici prima che accadano.
+
+### 🩺 Diagnostica K8s Universale
+
+Auto-scopre installazioni Helm, traccia le versioni di Kubernetes e dell'Operator MCK, mappa dinamicamente PVC, Servizi e Pod. Rileva OOMKilled, eventi K8s recenti e log live direttamente nella dashboard.
+
+### 📜 Log Management & Export
+
+Terminale live integrato per visualizzare i log di `mongot` e dell'Operator in streaming. Download completo degli archivi di log filtrabili per finestra temporale (`?time=1h`) e severità (`?level=error`).
+
+### 📊 Prometheus Doppio Fallback
+
+Scraping delle metriche dai pod tramite accesso di rete diretto (HTTP) con fallback automatico sul tunnel K8s API Server Proxy — nessuna configurazione aggiuntiva richiesta.
+
+### ⚡ Background Collector
+
+La raccolta dati avviene su un thread daemon separato a intervallo configurabile. L'endpoint `/metrics` risponde sempre in < 1ms dalla cache in memoria — la dashboard non blocca mai su chiamate esterne.
+
+### 🔒 Sicurezza
+
+HTTP Basic Auth opzionale, security headers (CSP, X-Frame-Options, X-Content-Type-Options), validazione degli input K8s names contro injection, CORS configurabile via CLI.
 
 ---
 
@@ -222,7 +213,7 @@ python3 mongot_monitor.py \
 
 ## 🧠 Come funziona il SRE Advisor?
 
-Il pannello **Compliance & Best Practices** esegue automaticamente 11 check in Python ad ogni ciclo di raccolta:
+Il pannello **Compliance & Best Practices** esegue automaticamente 15 check in Python ad ogni ciclo di raccolta:
 
 | # | Check | Soglie |
 |:---|:---|:---|
