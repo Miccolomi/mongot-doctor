@@ -20,8 +20,21 @@ mongot-doctor transforms complex MongoDB Search cluster data into instant diagno
 - **Automatic Search Diagnosis** interprets cluster health instantly — Health Summary, Warnings, Recommendations in one panel
 - **Log Intelligence** parses mongot JSON logs automatically and detects errors, failures, and connection issues across configurable time windows
 - **Search Index Inspector** analyzes every Search index definition — mapping quality, field count, dynamic mapping overuse, and index health — with actionable suggestions
+- **Status Report** exports a full cluster snapshot in Text, Markdown, or JSON — shareable from the dashboard or from the CLI, ready for tickets, runbooks, and automation
 
 No agents to install. No extra infrastructure. Just point it at your cluster and go.
+
+---
+
+> [!TIP]
+> **Get a full diagnostic in one command**
+>
+> ```bash
+> python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb --report
+> ```
+>
+> Prints a complete cluster snapshot — pods, search metrics, JVM heap, Lucene merges, oplog window, SRE findings, and index health — straight to your terminal.
+> Add `--format markdown` or `--format json` to export to Confluence, GitHub Issues, or your alerting pipeline.
 
 ---
 
@@ -38,6 +51,7 @@ No agents to install. No extra infrastructure. Just point it at your cluster and
 - [🩻 Automatic Search Diagnosis](#-automatic-search-diagnosis)
 - [🪵 Log Intelligence](#-log-intelligence)
 - [🔎 Search Index Inspector](#-search-index-inspector)
+- [📋 Status Report](#-status-report)
 
 ---
 
@@ -59,6 +73,7 @@ No agents to install. No extra infrastructure. Just point it at your cluster and
 - 🩻 **Automatic Search Diagnosis** — real-time cluster health panel: Health Summary / Warnings / Recommendations; also available via `/api/diagnose` and `--diagnose` CLI (exit 0/1/2 for CI pipelines)
 - 🪵 **Log Intelligence** — on-demand mongot JSON log analysis with configurable time window (1h / 24h / 7d / 30d); detects errors, OOM, TLS/auth issues, connection failures, index failures, change stream problems
 - 🔎 **Search Index Inspector** — inspects every Search index definition: dynamic mapping detection, field count analysis, BUILDING/FAILED status, over-indexed collections; available via `/api/indexes/inspect` and `--inspect-indexes` CLI
+- 📋 **Status Report** — full cluster snapshot in Text (ASCII), Markdown, or JSON; one-click download and copy from the dashboard; `--report` CLI flag for CI/automation pipelines
 
 ---
 
@@ -206,6 +221,7 @@ kubectl get svc mongot-doctor -n mongodb
 | `/api/diagnose` | Structured diagnosis: health, warnings, recommendations |
 | `/api/logs/analyze/<ns>/<pod>` | Log Intelligence — pattern analysis (`?window=1h\|24h\|7d\|30d`) |
 | `/api/indexes/inspect` | Search Index Inspector — mapping quality and health report |
+| `/api/report?format=text\|markdown\|json` | Status Report — full cluster snapshot in the requested format |
 
 ---
 
@@ -215,6 +231,7 @@ kubectl get svc mongot-doctor -n mongodb
 mongot_doctor.py        # App Factory + CLI entry point
 background.py            # BackgroundCollector (thin orchestrator, daemon thread)
 advisor.py               # SRE Advisor engine (15 checks, pure Python)
+report.py                # Status Report builder (Text / Markdown / JSON formatters)
 security.py              # Input validation, security headers, Basic Auth
 state.py                 # Shared mutable state (clients, cache, lock)
 
@@ -244,6 +261,7 @@ frontend/
       advisor.js         # Advisor renderer + Log Intelligence
       pipeline.js        # Sync Pipeline Analyzer
       index_inspector.js # Search Index Inspector panel
+      report.js          # Status Report modal (tabs, copy, download)
       render.js          # Main renderer + polling
 
 tests/
@@ -587,3 +605,75 @@ Exit codes: `0` = healthy, `1` = degraded, `2` = critical.
 ### Web UI
 
 The inspector panel appears automatically above the main grid on page load and shows a card per index. A **↺ Refresh** button lets you re-run the inspection on demand. If MongoDB is not configured, the panel displays a graceful "not connected" message instead of an error.
+
+---
+
+## 📋 Status Report
+
+mongot-doctor can generate a full cluster snapshot covering pods, search metrics, JVM heap, Lucene merges, oplog, SRE findings, and index health — in three formats suited for different audiences and tools.
+
+### Formats
+
+| Format | Use case |
+|:---|:---|
+| **Text** | Human-readable ASCII report — paste into a ticket, Slack, or runbook |
+| **Markdown** | Tables and emoji — rendered in GitHub issues, Confluence, Notion |
+| **JSON** | Machine-readable — ingest into alerting tools, Grafana, CI/CD pipelines |
+
+### Web UI
+
+Click the **📋 Report** button in the dashboard header to open the report modal. Three tabs switch between formats instantly. Each format panel includes:
+
+- **Copy** — copies the full report to clipboard with visual feedback
+- **Download** — saves the report as a file (`mongot-report-<timestamp>.txt|md|json`)
+
+The modal closes with the **✕** button or the `Escape` key.
+
+### API
+
+```bash
+GET /api/report?format=text
+GET /api/report?format=markdown
+GET /api/report?format=json
+```
+
+Text and Markdown are returned as `text/plain`. JSON is returned as `application/json`.
+
+Example JSON schema:
+
+```json
+{
+  "generated_at": "2026-03-17T10:00:00Z",
+  "health": "degraded",
+  "pods": [...],
+  "per_pod_metrics": {
+    "my-replica-set-search-0": {
+      "search_commands": { "search_qps": 1.5, "search_avg_latency_sec": 0.012, ... },
+      "jvm": { "heap_used_bytes": 1073741824, "heap_max_bytes": 4294967296, ... },
+      "lucene_merges": { "running_merges": 2, "merging_docs": 45000, ... },
+      "indexing": { "change_stream_lag_sec": 0.4, "initial_sync_in_progress": 0, ... }
+    }
+  },
+  "oplog": { "window_hours": 72.5, "used_pct": 12.3 },
+  "advisor_findings": [...],
+  "indexes": [...],
+  "errors": [...]
+}
+```
+
+### CLI
+
+Generate a report without starting the web server:
+
+```bash
+python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb \
+  --report --format text
+
+python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb \
+  --report --format markdown
+
+python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb \
+  --report --format json > report.json
+```
+
+`--format` defaults to `text` if omitted. The output is printed to stdout — redirect to a file as needed.

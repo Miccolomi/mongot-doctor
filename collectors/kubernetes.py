@@ -135,8 +135,8 @@ def discover_mongot_pods(errors: list = None) -> list:
             labels = pod.metadata.labels or {}
             containers = pod.spec.containers or []
 
-            # Always exclude the monitor pod itself
-            if labels.get("app") == "mongot-doctor":
+            # Always exclude the monitor pod itself (handles both old and new label)
+            if labels.get("app") in ("mongot-doctor", "mongot-monitor"):
                 continue
 
             # 1️⃣ Official MCK label (most reliable, works with scaling + rolling upgrades)
