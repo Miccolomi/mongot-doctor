@@ -23,7 +23,7 @@ from collectors.mongodb import (
 from collectors.prometheus import scrape_mongot_prometheus
 from engine.rate_calculator import compute_pod_rates
 
-log = logging.getLogger("mongot-monitor.collector")
+log = logging.getLogger("mongot-doctor.collector")
 
 
 class BackgroundCollector:

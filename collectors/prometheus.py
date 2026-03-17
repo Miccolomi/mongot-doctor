@@ -9,7 +9,7 @@ import logging
 import requests
 import state
 
-log = logging.getLogger("mongot-monitor.prometheus")
+log = logging.getLogger("mongot-doctor.prometheus")
 
 
 def scrape_mongot_prometheus(pod_name: str, namespace: str, pod_ip: str, port: int,

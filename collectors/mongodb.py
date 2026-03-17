@@ -14,7 +14,7 @@ try:
 except ImportError:
     MongoClient = None
 
-log = logging.getLogger("mongot-monitor.mongodb")
+log = logging.getLogger("mongot-doctor.mongodb")
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────

@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mongot-monitor
+  name: mongot-doctor
   namespace: mongodb       # change to your namespace
   labels:
-    app: mongot-monitor
+    app: mongot-doctor
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mongot-monitor
+      app: mongot-doctor
   template:
     metadata:
       labels:
-        app: mongot-monitor
+        app: mongot-doctor
     spec:
-      serviceAccountName: mongot-monitor
+      serviceAccountName: mongot-doctor
 
       containers:
-        - name: mongot-monitor
-          image: mongot-monitor:latest   # replace with your registry/image:tag
+        - name: mongot-doctor
+          image: mongot-doctor:latest   # replace with your registry/image:tag
           imagePullPolicy: IfNotPresent
 
           ports:
@@ -30,10 +30,10 @@ spec:
             - name: MONGODB_URI
               valueFrom:
                 secretKeyRef:
-                  name: mongot-monitor-secret
+                  name: mongot-doctor-secret
                   key: MONGODB_URI
 
-          command: ["python3", "mongot_monitor.py"]
+          command: ["python3", "mongot_doctor.py"]
           args:
             - "--in-cluster"
             - "--uri"

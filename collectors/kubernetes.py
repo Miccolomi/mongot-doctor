@@ -17,7 +17,7 @@ except ImportError:
     k8s_config = None
     K8S_AVAILABLE = False
 
-log = logging.getLogger("mongot-monitor.k8s")
+log = logging.getLogger("mongot-doctor.k8s")
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ def discover_mongot_pods(errors: list = None) -> list:
             containers = pod.spec.containers or []
 
             # Always exclude the monitor pod itself
-            if labels.get("app") == "mongot-monitor":
+            if labels.get("app") == "mongot-doctor":
                 continue
 
             # 1️⃣ Official MCK label (most reliable, works with scaling + rolling upgrades)

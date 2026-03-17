@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
-COPY advisor.py background.py security.py state.py mongot_monitor.py ./
+COPY advisor.py background.py security.py state.py mongot_doctor.py ./
 COPY collectors/ collectors/
 COPY engine/ engine/
 COPY routes/ routes/
@@ -17,4 +17,4 @@ EXPOSE 5050
 
 # Default: in-cluster mode, port 5050.
 # Override --uri, --namespace, --auth etc. via Deployment args or env.
-CMD ["python3", "mongot_monitor.py", "--in-cluster", "--port", "5050"]
+CMD ["python3", "mongot_doctor.py", "--in-cluster", "--port", "5050"]

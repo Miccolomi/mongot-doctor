@@ -5,7 +5,7 @@
 **Prima:** metriche Prometheus grezze, log kubectl sparsi, definizioni di indici opache, nessuna visione chiara di cosa non va.
 **Dopo:** una dashboard, uno stato di salute, una lista di azioni.
 
-mongot-monitor trasforma i dati complessi del cluster MongoDB Search in diagnosi immediata — progettato per **SRE**, **operatori MongoDB** e **platform engineer** che gestiscono MongoDB Search su Kubernetes.
+mongot-doctor trasforma i dati complessi del cluster MongoDB Search in diagnosi immediata — progettato per **SRE**, **operatori MongoDB** e **platform engineer** che gestiscono MongoDB Search su Kubernetes.
 
 ![Dashboard Screenshot](dashboard.png)
 
@@ -75,8 +75,8 @@ Usa questa modalità per sviluppo, demo o quando preferisci girare il monitor fu
 **1. Clona e installa**
 
 ```bash
-git clone https://github.com/Miccolomi/mongot-monitor.git
-cd mongot-monitor
+git clone https://github.com/Miccolomi/mongot-doctor.git
+cd mongot-doctor
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -85,7 +85,7 @@ pip install -r requirements.txt
 **2. Avvia**
 
 ```bash
-python3 mongot_monitor.py \
+python3 mongot_doctor.py \
   --uri "mongodb://USER:PASSWORD@HOST:PORT/admin?replicaSet=RS&authSource=admin&authMechanism=SCRAM-SHA-256" \
   --namespace mongodb \
   --port 5050
@@ -115,22 +115,22 @@ Usa questa modalità per un deployment permanente nel cluster. Il monitor gira c
 **1. Build dell'immagine Docker**
 
 ```bash
-docker build -t mongot-monitor:latest .
+docker build -t mongot-doctor:latest .
 ```
 
 Per un registry privato (Docker Hub, ECR, GCR):
 
 ```bash
-docker build -t <tuo-registry>/mongot-monitor:1.0.0 .
-docker push <tuo-registry>/mongot-monitor:1.0.0
+docker build -t <tuo-registry>/mongot-doctor:1.0.0 .
+docker push <tuo-registry>/mongot-doctor:1.0.0
 ```
 
 Aggiorna `image:` in `k8s/deployment.yaml` con il tag corretto.
 
 > ⚠️ **Importante**: dopo ogni aggiornamento del codice, rifai il build e riavvia il deployment:
 > ```bash
-> docker build -t mongot-monitor:latest .
-> kubectl rollout restart deployment/mongot-monitor -n mongodb
+> docker build -t mongot-doctor:latest .
+> kubectl rollout restart deployment/mongot-doctor -n mongodb
 > ```
 
 **2. Configura la URI MongoDB**
@@ -180,7 +180,7 @@ kubectl apply -f k8s/service.yaml     # NodePort
 **4. Accedi alla dashboard**
 
 ```bash
-kubectl get svc mongot-monitor -n mongodb
+kubectl get svc mongot-doctor -n mongodb
 # Esempio: 5050:31855/TCP  →  NodePort = 31855
 ```
 
@@ -212,7 +212,7 @@ kubectl get svc mongot-monitor -n mongodb
 ## 🏗️ Struttura del Progetto
 
 ```
-mongot_monitor.py        # App Factory + CLI entry point
+mongot_doctor.py        # App Factory + CLI entry point
 background.py            # BackgroundCollector (thin orchestrator, thread daemon)
 advisor.py               # SRE Advisor engine (15 check, Python puro)
 security.py              # Validazione input, security headers, Basic Auth
@@ -352,7 +352,7 @@ La discovery dei pod `mongot` usa una gerarchia resistente a upgrade rolling, sc
 3. **Container image** — contiene `mongodb-enterprise-search` o `mongot`
 4. **Nome pod (ultima spiaggia)** — euristica, esclude `mongod` e `monitor`
 
-Il pod del monitor stesso viene sempre escluso tramite `app: mongot-monitor`.
+Il pod del monitor stesso viene sempre escluso tramite `app: mongot-doctor`.
 
 ### ⚡ Background Collector & Rate Engine
 
@@ -422,7 +422,7 @@ GET /api/diagnose
 Esegui un singolo ciclo diagnostico e termina — utile in pipeline CI/CD:
 
 ```bash
-python3 mongot_monitor.py --diagnose \
+python3 mongot_doctor.py --diagnose \
   --uri "mongodb://..." --namespace mongodb
 ```
 
@@ -486,7 +486,7 @@ GET /api/logs/analyze/<namespace>/<pod>?window=24h
 
 ## 🔎 Search Index Inspector
 
-Molti team creano Search index senza capirne il costo reale: dynamic mapping che indicizza ogni campo, indici in stato BUILDING dimenticati, mapping espliciti enormi con decine di campi inutilizzati. mongot-monitor analizza ogni definizione di index automaticamente e ti dice esattamente cosa correggere.
+Molti team creano Search index senza capirne il costo reale: dynamic mapping che indicizza ogni campo, indici in stato BUILDING dimenticati, mapping espliciti enormi con decine di campi inutilizzati. mongot-doctor analizza ogni definizione di index automaticamente e ti dice esattamente cosa correggere.
 
 ### Check eseguiti
 
@@ -553,7 +553,7 @@ GET /api/indexes/inspect
 Esegui un'ispezione completa dal terminale — senza aprire la dashboard:
 
 ```bash
-python3 mongot_monitor.py --uri "mongodb://..." --inspect-indexes
+python3 mongot_doctor.py --uri "mongodb://..." --inspect-indexes
 ```
 
 Esempio di output:

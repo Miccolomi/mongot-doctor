@@ -27,7 +27,7 @@ from collectors.mongodb import init_mongo
 from background import BackgroundCollector
 from security import BasicAuth, register_security_headers
 
-log = logging.getLogger("mongot-monitor")
+log = logging.getLogger("mongot-doctor")
 
 
 # ── JSON encoder ──────────────────────────────────────────────────────────────

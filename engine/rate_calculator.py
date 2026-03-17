@@ -21,7 +21,7 @@ Counter-reset safety:
 import logging
 from typing import Optional
 
-log = logging.getLogger("mongot-monitor.rate_calculator")
+log = logging.getLogger("mongot-doctor.rate_calculator")
 
 # Physical ceiling: no real mongot will serve more than this many QPS.
 # Anything above signals a Prometheus counter reset, not real traffic.

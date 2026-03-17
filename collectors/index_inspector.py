@@ -6,7 +6,7 @@ per-index observations (warn/crit/info) about mapping quality and health.
 
 import logging
 
-log = logging.getLogger("mongot-monitor.index_inspector")
+log = logging.getLogger("mongot-doctor.index_inspector")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ Analysis is on-demand (not in the background loop) — triggered via /api/logs/a
 import json
 import logging
 
-log = logging.getLogger("mongot-monitor.log_analyzer")
+log = logging.getLogger("mongot-doctor.log_analyzer")
 
 # Hard cap: never analyze more than this many lines regardless of window
 _MAX_LINES = 2000

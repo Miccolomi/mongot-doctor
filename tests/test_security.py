@@ -6,7 +6,7 @@ import base64
 import pytest
 
 from security import is_valid_k8s_name, BasicAuth
-from mongot_monitor import create_app
+from mongot_doctor import create_app
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

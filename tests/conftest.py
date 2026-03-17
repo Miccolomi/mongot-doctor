@@ -5,7 +5,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import state
-from mongot_monitor import create_app
+from mongot_doctor import create_app
 
 _EMPTY_METRICS = {
     "mongot_pods": [],
