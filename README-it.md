@@ -677,3 +677,13 @@ python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb \
 ```
 
 `--format` ha come default `text` se omesso. L'output viene stampato su stdout — reindirizza su file secondo necessità.
+
+---
+
+## 🤝 Supporta il Progetto
+
+Se lo trovi utile:
+
+- ⭐ **Metti una stella al repo** — aiuta altri a scoprire il progetto
+- 🧵 **Condividilo con il tuo team** — SRE, operatori MongoDB, platform engineer
+- 🐛 **Segnala un problema** — [apri una issue su GitHub](https://github.com/Miccolomi/mongot-doctor/issues)
