@@ -58,7 +58,7 @@ function render(d) {
   }
   h+=row('CRDs Found',`<span class="pur">${crds.length}</span>`);
   h+=row('mongot Pods',`<span class="blu">${pods.length}</span>`);
-  h+=row('Search Indexes',`<span class="grn">${idxs.length}</span>`);
+  h+=row('Search Indexes',`<span class="grn">${idxs.length}</span> <span style="font-size:10px;color:#6b7394">↑ see inspector above</span>`);
   h+=row('PVC',`${pvcs.length}`) + row('Services',`${svcs.length}`);
   const helm=d.helm_releases||[];
   if (helm.length > 0) {
@@ -255,12 +255,6 @@ function render(d) {
 
   if(!pods.length) h+=`<div class="c s4"><div class="empty">No mongot pod found</div></div>`;
 
-  // Search Indexes table
-  h+=`<div class="c s4"><div class="c-h"><span>📑</span><span class="c-t">Search Indexes (${idxs.length})</span></div>`;
-  if(idxs.length){h+=`<table><thead><tr><th>Name</th><th>Collection</th><th>Type</th><th>Status</th><th>Queryable</th><th>Documents</th></tr></thead><tbody>`;
-  idxs.forEach(i=>{const v=i.type==='vectorSearch';h+=`<tr><td style="font-weight:600;color:#e8ecf4">${i.name}</td><td style="font-size:11px">${i.ns}</td><td><span class="tag ${v?'tag-v':'tag-f'}">${v?'VECTOR':'FULL-TEXT'}</span></td><td>${pill(i.status)}</td><td>${i.queryable?'<span class="grn">✓</span>':'<span class="red">✗</span>'}</td><td>${i.num_docs!=null?fN(i.num_docs):'—'}</td></tr>`});
-  h+=`</tbody></table>`}else{h+=`<div class="empty">No search index found in the database</div>`}
-  h+=`</div>`;
 
   // PVC & Services
   if(pvcs.length||svcs.length){
