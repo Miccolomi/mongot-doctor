@@ -680,6 +680,12 @@ python3 mongot_doctor.py --uri "mongodb://..." --namespace mongodb \
 
 ---
 
+## 📄 License
+
+MIT License — free to use, modify, and distribute. See [LICENSE](LICENSE) for the full text.
+
+---
+
 ## 🤝 Support the Project
 
 If you find this useful:
