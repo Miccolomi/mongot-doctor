@@ -9,3 +9,5 @@ env/
 .idea/
 .vscode/
 .DS_Store
+DIAGNOSTICA.md
+*.gdoc

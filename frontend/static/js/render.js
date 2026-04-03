@@ -29,45 +29,48 @@ function render(d) {
       }
   }
 
-  let h='';
+  // 1. OPLOG & K8s DISCOVERY — rendered above the connection banner
+  let topH='';
 
-  // 1. OPLOG & K8s DISCOVERY
-  h+=`<div class="c s2"><div class="c-h"><span>🌍</span><span class="c-t">Global DB Status</span></div>`;
+  topH+=`<div class="c s2"><div class="c-h"><span>🌍</span><span class="c-t">Global DB Status</span></div>`;
   if(d.oplog_info && d.oplog_info.head_time) {
-      h+=row('Oplog Head (Last Write)', `<span style="color:#00e676">${d.oplog_info.head_time}</span>`);
-      h+=row('Oplog Window (Max Lag)', `<span class="${d.oplog_info.window_hours<6?'red':d.oplog_info.window_hours<24?'ylw':'grn'}">${d.oplog_info.window_hours} hours</span>`);
-  } else h+=row('Oplog Info', '<span style="color:#ffab00">Not available</span>');
-  h+=row('MongoDB Conn.', d.mongo_connected?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
-  h+=row('K8s API Conn.', (pods.length||crds.length||op.name)?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
-  h+=row('Collection time',`${d._collect_ms||'?'} ms`);
-  h+=`</div>`;
+      topH+=row('Oplog Head (Last Write)', `<span style="color:#00e676">${d.oplog_info.head_time}</span>`);
+      topH+=row('Oplog Window (Max Lag)', `<span class="${d.oplog_info.window_hours<6?'red':d.oplog_info.window_hours<24?'ylw':'grn'}">${d.oplog_info.window_hours} hours</span>`);
+  } else topH+=row('Oplog Info', '<span style="color:#ffab00">Not available</span>');
+  topH+=row('MongoDB Conn.', d.mongo_connected?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
+  topH+=row('K8s API Conn.', (pods.length||crds.length||op.name)?'<span class="grn">Connected</span>':'<span class="red">N/A</span>');
+  topH+=row('Collection time',`${d._collect_ms||'?'} ms`);
+  topH+=`</div>`;
 
-  h+=`<div class="c s2"><div class="c-h"><span>📋</span><span class="c-t">K8s Discovery</span></div>`;
-  h+=row('K8s Cluster',`<span class="cyn">${d.k8s_version||'N/A'}</span>`);
+  topH+=`<div class="c s2"><div class="c-h"><span>📋</span><span class="c-t">K8s Discovery</span></div>`;
+  topH+=row('K8s Cluster',`<span class="cyn">${d.k8s_version||'N/A'}</span>`);
   if(op.name) {
       const opVer = op.image && op.image.includes(':') ? op.image.split(':').pop() : 'N/A';
-      h+=row('Operator Ver.',`<span class="pur">${opVer}</span>`);
-      h+=row('Operator Pod',`${op.name} (${op.replicas||0}/${op.desired||1})`);
+      topH+=row('Operator Ver.',`<span class="pur">${opVer}</span>`);
+      topH+=row('Operator Pod',`${op.name} (${op.replicas||0}/${op.desired||1})`);
       const rpod = op.pod_name || op.name;
       const isop=openLogs.has(rpod);
-      h+=`<div style="margin-top:6px;margin-bottom:6px;display:flex;gap:6px">
+      topH+=`<div style="margin-top:6px;margin-bottom:6px;display:flex;gap:6px">
              <button id="btn-log-${rpod}" class="btn" style="flex:1;font-size:10px;padding:4px" onclick="toggleLogs('${op.namespace}', '${rpod}')">${isop?'▼ Hide Operator Logs':'▶ Show Live Operator Logs'}</button>
              <button onclick="promptDownloadLog('${op.namespace}', '${rpod}')" class="btn" style="padding:4px 8px;font-size:10px;background:#1e3a8a;color:#93c5fd;border-radius:4px;display:flex;align-items:center;">⬇️ Download (.txt)</button>
           </div>`;
-      h+=`<pre id="log-${rpod}" class="term" style="display:${isop?'block':'none'};margin-top:4px">${logCache[rpod]||'Loading...'}</pre>`;
+      topH+=`<pre id="log-${rpod}" class="term" style="display:${isop?'block':'none'};margin-top:4px">${logCache[rpod]||'Loading...'}</pre>`;
   }
-  h+=row('CRDs Found',`<span class="pur">${crds.length}</span>`);
-  h+=row('mongot Pods',`<span class="blu">${pods.length}</span>`);
-  h+=row('Search Indexes',`<span class="grn">${idxs.length}</span> <span style="font-size:10px;color:#6b7394">↑ see inspector above</span>`);
-  h+=row('PVC',`${pvcs.length}`) + row('Services',`${svcs.length}`);
+  topH+=row('CRDs Found',`<span class="pur">${crds.length}</span>`);
+  topH+=row('mongot Pods',`<span class="blu">${pods.length}</span>`);
+  topH+=row('Search Indexes',`<span class="grn">${idxs.length}</span> <span style="font-size:10px;color:#6b7394">↑ see inspector above</span>`);
+  topH+=row('PVC',`${pvcs.length}`) + row('Services',`${svcs.length}`);
   const helm=d.helm_releases||[];
   if (helm.length > 0) {
       helm.forEach(r => {
           const stColor = r.status === 'deployed' ? '#00e676' : '#ff1744';
-          h += row(`Helm: ${r.namespace}`, `<span style="color:${stColor}" title="Updated: ${r.modifiedAt_str}">${r.name} (Rev ${r.revision}) - ${r.status}</span>`);
+          topH += row(`Helm: ${r.namespace}`, `<span style="color:${stColor}" title="Updated: ${r.modifiedAt_str}">${r.name} (Rev ${r.revision}) - ${r.status}</span>`);
       });
   }
-  h+=`</div>`;
+  topH+=`</div>`;
+  $('top-grid').innerHTML=topH;
+
+  let h='';
 
   // Log Intelligence banner (outside grid, above)
   setupLogIntelligence(pods);

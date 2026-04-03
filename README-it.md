@@ -80,6 +80,10 @@ Nessun agent da installare. Nessuna infrastruttura aggiuntiva. Punta il tool al 
 ## 🚀 Installazione e Avvio
 
 > **Prerequisiti**: `kubectl` configurato e puntato al tuo cluster. Stringa di connessione MongoDB con accesso in lettura su `local` (oplog) e sulle collection target.
+>
+> **Prometheus richiesto**: mongot-doctor legge le metriche di mongot via Prometheus. Prometheus **non è abilitato di default** — devi configurarlo esplicitamente nel tuo Kubernetes operator:
+> - **MongoDB Enterprise Operator (MCK)**: abilita la sezione `spec.prometheus` nella tua risorsa `MongoDB` — [guida Enterprise](https://www.mongodb.com/docs/kubernetes-operator/stable/tutorial/monitor-with-prometheus/)
+> - **MongoDB Community Operator**: abilita la sezione `spec.prometheus` nella tua risorsa `MongoDBCommunity` — [guida Community](https://github.com/mongodb/mongodb-kubernetes/blob/master/docs/mongodbcommunity/prometheus/README.md)
 
 ---
 
