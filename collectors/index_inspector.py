@@ -96,10 +96,21 @@ def inspect_search_indexes(mongo_client) -> list[dict]:
 
             for idx in raw_indexes:
                 idx_name   = idx.get("name", "default")
-                idx_type   = "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText"
                 status     = idx.get("status", "READY")
                 queryable  = idx.get("queryable", True)
                 definition = idx.get("latestDefinition", idx.get("definition", {}))
+
+                # Detect type: prefer explicit field, fallback to inferring from definition structure.
+                # $listSearchIndexes may omit the "type" field for vectorSearch indexes.
+                if idx.get("type") == "vectorSearch":
+                    idx_type = "vectorSearch"
+                elif any(
+                    isinstance(f, dict) and f.get("type") == "vector"
+                    for f in definition.get("fields", [])
+                ):
+                    idx_type = "vectorSearch"
+                else:
+                    idx_type = "fullText"
 
                 # Mapping analysis
                 mapping_dynamic = None
