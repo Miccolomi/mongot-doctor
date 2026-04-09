@@ -96,9 +96,17 @@ def get_search_indexes(errors: list = None) -> list:
                             pass
 
                     for idx in search_indexes:
+                        definition = idx.get("latestDefinition", idx.get("definition", {}))
+                        has_vector_fields = any(
+                            isinstance(f, dict) and f.get("type") == "vector"
+                            for f in definition.get("fields", [])
+                        )
+                        idx_type = "vectorSearch" if (
+                            idx.get("type") == "vectorSearch" or has_vector_fields
+                        ) else "fullText"
                         idx_info = {
                             "name": idx.get("name", "unknown"),
-                            "type": "vectorSearch" if idx.get("type") == "vectorSearch" else "fullText",
+                            "type": idx_type,
                             "status": idx.get("status", "READY"),
                             "ns": f"{db_name}.{coll_name}",
                             "queryable": idx.get("queryable", True),
