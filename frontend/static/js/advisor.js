@@ -3,12 +3,12 @@
 // Per-check extras: official docs link + actionable commands
 const ADVISOR_EXTRAS = {
     disk_200_rule: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/manage-indexes/',
+        link: 'https://www.mongodb.com/docs/manual/core/search-indexes/',
         link_label: 'Search Storage Requirements',
         commands: ['kubectl exec <pod> -n mongodb -- df -h /var/lib/mongot']
     },
     index_consolidation: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/create-index/',
+        link: 'https://www.mongodb.com/docs/manual/tutorial/manage-search-indexes/',
         link_label: 'Search Index Best Practices',
         commands: ['db.collection.getSearchIndexes()']
     },
@@ -18,17 +18,17 @@ const ADVISOR_EXTRAS = {
         commands: ['kubectl get pvc -n mongodb', 'kubectl describe pvc <pvc-name> -n mongodb']
     },
     cpu_qps: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/tune-search-performance/',
+        link: 'https://www.mongodb.com/docs/manual/reference/mongot/',
         link_label: 'Tune Search Performance',
         commands: ['kubectl top pods -n mongodb', 'kubectl describe pod <pod> -n mongodb']
     },
     page_faults: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/tune-search-performance/#memory',
+        link: 'https://www.mongodb.com/docs/manual/reference/mongot/',
         link_label: 'Memory Tuning for Search',
         commands: ["kubectl describe pod <pod> -n mongodb | grep -A5 'Limits'"]
     },
     oom_risk: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/tune-search-performance/#memory',
+        link: 'https://www.mongodb.com/docs/manual/reference/mongot/',
         link_label: 'JVM Heap & Memory Configuration',
         commands: [
             "kubectl describe pod <pod> -n mongodb | grep -A10 'Last State'",
@@ -73,12 +73,12 @@ const ADVISOR_EXTRAS = {
         ]
     },
     ram_index_ratio: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-overview/',
+        link: 'https://www.mongodb.com/docs/manual/reference/mongot/',
         link_label: 'Vector Search Memory Requirements',
         commands: ['kubectl top pods -n mongodb', "kubectl describe pod <pod> -n mongodb | grep -A5 'Limits'"]
     },
     lifecycle_failures: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/troubleshoot-atlas-search/',
+        link: 'https://www.mongodb.com/docs/manual/reference/mongot/',
         link_label: 'Search Troubleshooting Guide',
         commands: [
             "kubectl logs <pod> -n mongodb | grep -iE 'fail|error' | tail -50",
@@ -86,17 +86,17 @@ const ADVISOR_EXTRAS = {
         ]
     },
     scan_ratio: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-search/tune-search-performance/#improve-query-performance',
+        link: 'https://www.mongodb.com/docs/manual/reference/operator/aggregation/search/',
         link_label: 'Improve Search Query Performance',
         commands: ['db.collection.getSearchIndexes()  // review index definition and analyzer']
     },
     vector_scan_ratio: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-type/',
+        link: 'https://www.mongodb.com/docs/manual/reference/operator/aggregation/vectorSearch/',
         link_label: 'Vector Search Index Parameters',
         commands: ['db.collection.getSearchIndexes()  // check efSearch, efConstruction, m']
     },
     hnsw_nodes: {
-        link: 'https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-type/',
+        link: 'https://www.mongodb.com/docs/manual/reference/operator/aggregation/vectorSearch/',
         link_label: 'HNSW Graph Parameters',
         commands: ['db.collection.getSearchIndexes()  // review numDimensions, efConstruction, m']
     },
